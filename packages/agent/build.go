@@ -988,9 +988,22 @@ func (r Resolved) NewAgent() *core.Agent {
 	a.Reasoning = r.Reasoning
 	a.Temperature = r.Temperature
 	if hasOpenRouterServerTools(r.ToolRegistry) {
-		a.MaxToolCalls = tools.OpenRouterServerToolCallLimit
+		a.MaxToolCalls = openRouterServerToolCallLimit()
 	}
 	return a
+}
+
+// openRouterServerToolCallLimit returns the configured call limit from
+// config.json, falling back to the built-in default (4).
+func openRouterServerToolCallLimit() int {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return tools.OpenRouterServerToolCallLimit
+	}
+	if cfg.OpenRouterServerToolCallLimit != nil && *cfg.OpenRouterServerToolCallLimit > 0 {
+		return *cfg.OpenRouterServerToolCallLimit
+	}
+	return tools.OpenRouterServerToolCallLimit
 }
 
 // OpenRouterServerToolsEnabled reports the persisted preference.

@@ -1271,6 +1271,7 @@ func runInteractive(ctx context.Context, args Args, version string) error {
 		AutoCompactThreshold:         initialCfg.AutoCompactThreshold,
 		JailByDefault:                initialCfg.JailByDefault,
 		OpenRouterServerToolsEnabled: initialCfg.OpenRouterServerToolsEnabled,
+		OpenRouterServerToolCallLimit: initialCfg.OpenRouterServerToolCallLimit,
 		NoTools:                      args.NoTools,
 		QuickModelShortcuts:          quickModelShortcuts,
 		RecursiveFileSuggest:         initialCfg.RecursiveFileSuggest,
