@@ -61,6 +61,69 @@ func TestDrawLogContentChangeBreaksFastPath(t *testing.T) {
 	}
 }
 
+func TestDrawLogLargeBottomShrinkKeepsVisibleRowsAddressable(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewRenderer(&buf)
+	r.Resize(80, 4)
+
+	// A long dialog, such as a swarm transcript, scrolls beyond the viewport.
+	r.DrawLog(nil, []string{"transcript 1", "transcript 2", "transcript 3", "transcript 4", "transcript 5", "transcript 6"}, -1, 0)
+	buf.Reset()
+
+	// Returning to the short dashboard requires a full repaint because one
+	// viewport of logical rows disappeared.
+	r.DrawLog(nil, []string{"dashboard", "selected agent 1"}, -1, 0)
+	buf.Reset()
+
+	// The dashboard remains interactive after that repaint. A cursor move must
+	// update its visible selection instead of being discarded as inaccessible.
+	r.DrawLog(nil, []string{"dashboard", "selected agent 2"}, -1, 0)
+	if got := buf.String(); !strings.Contains(got, "selected agent 2") {
+		t.Fatalf("visible update after large dialog shrink was suppressed: %q", got)
+	}
+}
+
+func TestDrawLogPartialViewportShrinkRepaintsFromDashboardStart(t *testing.T) {
+	t.Setenv("TERM_PROGRAM", "ghostty")
+	var buf bytes.Buffer
+	r := NewRenderer(&buf)
+	r.Resize(80, 4)
+
+	// This transcript overflows the viewport, but returning to the dashboard
+	// removes fewer than one viewport of rows.
+	r.DrawLog(nil, []string{"transcript 1", "transcript 2", "transcript 3", "transcript 4", "transcript 5"}, -1, 0)
+	buf.Reset()
+
+	r.DrawLog(nil, []string{"dashboard", "selected agent 1"}, -1, 0)
+	got := buf.String()
+	if !strings.Contains(got, SeqClearScreenNoHome) {
+		t.Fatalf("partial viewport shrink did not repaint the screen: %q", got)
+	}
+	for _, want := range []string{"dashboard", "selected agent 1"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("partial viewport repaint missing %q: %q", want, got)
+		}
+	}
+}
+
+func TestDrawLogChatShrinkDoesNotForceDialogRepaint(t *testing.T) {
+	t.Setenv("TERM_PROGRAM", "ghostty")
+	var buf bytes.Buffer
+	r := NewRenderer(&buf)
+	r.Resize(80, 4)
+
+	r.DrawLog([]string{"chat 1", "chat 2", "chat 3", "chat 4", "chat 5", "chat 6"}, []string{"input"}, 0, 0)
+	buf.Reset()
+
+	// Chat reflow has its own coordinate-rebasing path, which preserves native
+	// terminal selections. Only a shrinking bottom frame should force the
+	// repaint used when returning from a transcript to the dashboard.
+	r.DrawLog([]string{"chat 1", "chat 2", "chat 3", "chat 4", "chat 5"}, []string{"input"}, 0, 0)
+	if got := buf.String(); strings.Contains(got, SeqClearScreenNoHome) {
+		t.Fatalf("chat shrink unnecessarily repainted the screen: %q", got)
+	}
+}
+
 // TestDrawLogCursorMoveBreaksFastPath proves a cursor-only change
 // (no buffer change) still produces output. Without this, typing in
 // the editor would visually move the caret but the terminal would

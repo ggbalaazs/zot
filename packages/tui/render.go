@@ -583,7 +583,18 @@ func (r *Renderer) DrawLog(chat, bottom []string, cursorBottomRow, cursorCol int
 	// real previous bg-colored row.
 
 	wasInitialized := r.logInit
-	full := !wasInitialized || len(r.logLines) == 0
+	bottomShrunkAboveViewport := false
+	if len(bottomFrame) < len(r.logBottom) {
+		newViewportTop := len(lines) - r.rows
+		if newViewportTop < 0 {
+			newViewportTop = 0
+		}
+		// If the shorter bottom frame starts above the currently addressable
+		// viewport, relative cursor movement cannot repaint its prefix. This
+		// happens when returning from a moderately long dialog to a short one.
+		bottomShrunkAboveViewport = newViewportTop < r.logViewportTop
+	}
+	full := !wasInitialized || len(r.logLines) == 0 || bottomShrunkAboveViewport
 	if full {
 		writeFull(true, !wasInitialized)
 		r.logInit = true
@@ -786,10 +797,12 @@ func (r *Renderer) DrawLog(chat, bottom []string, cursorBottomRow, cursorCol int
 				w.WriteString(lines[idx])
 			}
 			finalRow := renderEnd
+			fullRepaint := false
 			if len(r.logLines) > len(lines) {
 				extra := len(r.logLines) - len(lines)
-				if extra > r.rows {
+				if extra >= r.rows {
 					writeFull(true, false)
+					fullRepaint = true
 				} else {
 					for e := 0; e < extra; e++ {
 						w.WriteString("\x1b[1B")
@@ -804,13 +817,15 @@ func (r *Renderer) DrawLog(chat, bottom []string, cursorBottomRow, cursorCol int
 					}
 				}
 			}
-			r.logHardwareRow = finalRow
-			r.logViewportTop = viewportTop
-			if minTop := r.logHardwareRow - r.rows + 1; minTop > r.logViewportTop {
-				r.logViewportTop = minTop
-			}
-			if r.logViewportTop < 0 {
-				r.logViewportTop = 0
+			if !fullRepaint {
+				r.logHardwareRow = finalRow
+				r.logViewportTop = viewportTop
+				if minTop := r.logHardwareRow - r.rows + 1; minTop > r.logViewportTop {
+					r.logViewportTop = minTop
+				}
+				if r.logViewportTop < 0 {
+					r.logViewportTop = 0
+				}
 			}
 		}
 	}
