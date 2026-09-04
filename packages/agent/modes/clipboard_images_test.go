@@ -1,11 +1,33 @@
 package modes
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/patriceckhart/zot/packages/provider"
 )
+
+func TestReadClipboardImageAndCleanupRemovesTemporaryFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "clipboard.png")
+	if err := os.WriteFile(path, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	data, ok, err := readClipboardImageAndCleanup(func() (string, []byte, bool, error) {
+		return path, []byte("png"), true, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || string(data) != "png" {
+		t.Fatalf("ok = %v, data = %q", ok, data)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("temporary image still exists: %v", err)
+	}
+}
 
 func testClipboardImage(marker string, data string) clipboardImageAttachment {
 	return clipboardImageAttachment{

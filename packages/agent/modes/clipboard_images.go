@@ -1,6 +1,8 @@
 package modes
 
 import (
+	"fmt"
+	"os"
 	"strings"
 
 	"github.com/patriceckhart/zot/packages/provider"
@@ -9,6 +11,18 @@ import (
 type clipboardImageAttachment struct {
 	Marker string
 	Image  provider.ImageBlock
+}
+
+type clipboardImageReader func() (string, []byte, bool, error)
+
+func readClipboardImageAndCleanup(read clipboardImageReader) ([]byte, bool, error) {
+	path, data, ok, err := read()
+	if path != "" {
+		if removeErr := os.Remove(path); removeErr != nil && err == nil {
+			err = fmt.Errorf("remove temporary clipboard image: %w", removeErr)
+		}
+	}
+	return data, ok, err
 }
 
 func preparePromptWithClipboardImages(text string, pending []clipboardImageAttachment) (string, []provider.ImageBlock) {

@@ -898,7 +898,7 @@ Slash commands also work while the agent is busy. Non-destructive ones (`/help`,
 | `ctrl+c` | Clear the input and queue (while idle) or arm the exit hint (while busy). Press again within 2s to exit. Use `esc` to cancel a running turn. |
 | `ctrl+d` | Exit on empty input. |
 | `ctrl+l` | Redraw the screen. |
-| `ctrl+v` | Paste clipboard text into the focused chat, side chat, dialog, filter, or credential input. On Linux this uses `wl-paste`, `xclip`, or `xsel`; terminal-native bracketed paste remains available without those commands. In the main chat on macOS, image-only clipboard content is saved as a temporary PNG and attached to the next prompt. |
+| `ctrl+v` | Paste clipboard text into the focused chat, side chat, dialog, filter, or credential input. In the main chat, image clipboard content is normalized to PNG and attached to the next prompt on macOS, Windows, Linux Wayland with `wl-paste`, and Linux X11 with `xclip`. Linux text paste also supports `xsel`; terminal-native bracketed text paste remains available without clipboard commands. |
 | `ctrl+o` | Expand or collapse long tool results (read, write, edit, bash, glob outputs over ~12 lines). |
 | `ctrl+1` ... `ctrl+9` | Switch to the model bound to that quick-model slot (configured in `/settings` -> model shortcuts). No-op while a turn is running. |
 | `@` | Open the file picker. Browse files and directories in the working directory. |

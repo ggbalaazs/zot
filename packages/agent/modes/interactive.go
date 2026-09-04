@@ -2815,7 +2815,7 @@ func (i *Interactive) handleKey(ctx context.Context, k tui.Key) (done bool) {
 }
 
 func (i *Interactive) pasteClipboard() {
-	_, data, ok, err := tui.ReadClipboardImagePNG()
+	data, ok, err := readClipboardImageAndCleanup(tui.ReadClipboardImagePNG)
 	if err != nil {
 		i.mu.Lock()
 		i.statusErr = "clipboard paste failed: " + err.Error()

@@ -3,17 +3,15 @@
 package tui
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"golang.org/x/image/tiff"
 )
 
 const readClipboardImageScript = `
@@ -50,7 +48,10 @@ end run
 func ReadClipboardImagePNG() (string, []byte, bool, error) {
 	dir := clipboardImageDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", nil, false, err
+		return "", nil, false, fmt.Errorf("create clipboard image directory: %w", err)
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return "", nil, false, fmt.Errorf("secure clipboard image directory: %w", err)
 	}
 	path := filepath.Join(dir, "clipboard-"+time.Now().Format("20060102-150405")+"-"+randomHex(4)+".png")
 	rawPath := path + ".raw"
@@ -64,36 +65,37 @@ func ReadClipboardImagePNG() (string, []byte, bool, error) {
 		return "", nil, false, nil
 	}
 
-	switch kind {
-	case "png":
-		if err := os.Rename(rawPath, path); err != nil {
-			return "", nil, false, err
-		}
-	case "tiff":
-		if err := convertTIFFFileToPNG(rawPath, path); err != nil {
-			return "", nil, false, err
-		}
-	default:
-		clipPath, ok := findClipboardImagePath(kind)
+	sourcePath := rawPath
+	if kind != "png" && kind != "tiff" {
+		var ok bool
+		sourcePath, ok = findClipboardImagePath(kind)
 		if !ok {
 			return "", nil, false, fmt.Errorf("unexpected clipboard image kind %q", kind)
 		}
-		if err := copyClipboardImageFileToPNG(clipPath, path); err != nil {
-			return "", nil, false, err
-		}
 	}
-
-	data, err := os.ReadFile(path)
+	raw, err := readClipboardImageFile(sourcePath)
 	if err != nil {
-		return "", nil, false, err
+		return "", nil, false, fmt.Errorf("read clipboard image: %w", err)
+	}
+	data, err := normalizeClipboardImagePNG(raw)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("invalid clipboard image: %w", err)
+	}
+	if err := writeClipboardPNGFile(path, data); err != nil {
+		return "", nil, false, fmt.Errorf("write clipboard PNG: %w", err)
 	}
 	return path, data, true, nil
 }
 
 func writeClipboardImageData(path string) (string, error) {
-	cmd := exec.Command("/usr/bin/osascript", "-e", readClipboardImageScript, path)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", "-e", readClipboardImageScript, path)
 	out, err := cmd.CombinedOutput()
 	trimmed := strings.TrimSpace(string(out))
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("osascript timed out: %w", ctx.Err())
+	}
 	if err != nil {
 		if strings.Contains(trimmed, "NO_IMAGE") || strings.Contains(trimmed, "Can’t make") || strings.Contains(trimmed, "Can't make") {
 			return "", nil
@@ -128,21 +130,6 @@ func clipboardImageKind(s string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-func copyClipboardImageFileToPNG(srcPath, dstPath string) error {
-	switch strings.ToLower(filepath.Ext(srcPath)) {
-	case ".png":
-		data, err := os.ReadFile(srcPath)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(dstPath, data, 0o600)
-	case ".tif", ".tiff":
-		return convertTIFFFileToPNG(srcPath, dstPath)
-	default:
-		return fmt.Errorf("clipboard file is not a supported image type: %s", srcPath)
-	}
 }
 
 func findClipboardImagePath(s string) (string, bool) {
@@ -190,27 +177,6 @@ func clipboardImagePath(s string) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-func convertTIFFFileToPNG(srcPath, dstPath string) error {
-	in, err := os.Open(srcPath)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	img, err := tiff.Decode(in)
-	if err != nil {
-		return err
-	}
-
-	out, err := os.Create(dstPath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	return png.Encode(out, img)
 }
 
 func clipboardImageDir() string {
