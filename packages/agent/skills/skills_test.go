@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -107,6 +108,30 @@ func TestKebabCase(t *testing.T) {
 		if got := KebabCase(in); got != want {
 			t.Errorf("KebabCase(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestDiscoverSourcesFollowsSymlinkedRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory symlinks require elevated privileges on Windows")
+	}
+
+	target := t.TempDir()
+	path := filepath.Join(target, "nested", "review")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("---\ndescription: linked\n---\nbody"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(t.TempDir(), "skills")
+	if err := os.Symlink(target, root); err != nil {
+		t.Fatal(err)
+	}
+
+	got, errs := DiscoverSources([]Source{{Root: root, Prefix: "linked:"}}, false)
+	if len(errs) != 0 || len(got) != 1 || got[0].Name != "linked:nested-review" {
+		t.Fatalf("skills=%#v errs=%v", got, errs)
 	}
 }
 

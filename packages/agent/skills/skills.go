@@ -187,7 +187,11 @@ func scanSource(source Source) ([]*Skill, []error) {
 		}
 		return []*Skill{s}, nil
 	}
-	err = filepath.WalkDir(source.Root, func(path string, d os.DirEntry, walkErr error) error {
+	root, err := filepath.EvalSymlinks(source.Root)
+	if err != nil {
+		return out, []error{fmt.Errorf("resolve %s: %w", source.Root, err)}
+	}
+	err = filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", path, walkErr))
 			return nil
@@ -201,7 +205,7 @@ func scanSource(source Source) ([]*Skill, []error) {
 			return nil
 		}
 		if s.Name == "" {
-			rel, e := filepath.Rel(source.Root, filepath.Dir(path))
+			rel, e := filepath.Rel(root, filepath.Dir(path))
 			if e != nil {
 				errs = append(errs, e)
 				return nil
@@ -226,7 +230,7 @@ func scanSource(source Source) ([]*Skill, []error) {
 		return nil
 	})
 	if err != nil {
-		errs = append(errs, fmt.Errorf("scan %s: %w", source.Root, err))
+		errs = append(errs, fmt.Errorf("scan %s: %w", root, err))
 	}
 	return out, errs
 }

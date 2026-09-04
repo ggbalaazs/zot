@@ -199,19 +199,17 @@ func (m *Manager) Discover(ctx context.Context) []error {
 	var jobs []loadJob
 	seenDirs := map[string]bool{} // dedup by basename so project wins
 	for _, dir := range m.searchDirs() {
-		entries, err := os.ReadDir(dir)
+		extDirs, err := extensionDirs(dir)
 		if err != nil {
 			continue // missing directory is fine
 		}
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			if seenDirs[e.Name()] {
+		for _, extDir := range extDirs {
+			name := filepath.Base(extDir)
+			if seenDirs[name] {
 				continue // higher-priority location already queued
 			}
-			seenDirs[e.Name()] = true
-			jobs = append(jobs, loadJob{dir: filepath.Join(dir, e.Name())})
+			seenDirs[name] = true
+			jobs = append(jobs, loadJob{dir: extDir})
 		}
 	}
 
@@ -250,6 +248,31 @@ func (m *Manager) searchDirs() []string {
 	return dirs
 }
 
+// extensionDirs returns child directories, including directories reached
+// through symlinks. os.DirEntry.IsDir reports false for a directory symlink.
+func extensionDirs(root string) ([]string, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+
+	dirs := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		path := filepath.Join(root, entry.Name())
+		info, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("stat %s: %w", path, err)
+		}
+		if info.IsDir() {
+			dirs = append(dirs, path)
+		}
+	}
+	return dirs, nil
+}
+
 // PlanSkillSources reads extension manifests without starting processes and
 // returns their filesystem-backed skill roots in precedence order. Explicit
 // extensions win over project and global installations; project wins global.
@@ -274,19 +297,13 @@ func PlanSkillSources(zotHome, cwd string, explicit []string, includeImplicit bo
 	var out []skills.Source
 	var errs []error
 	for _, root := range dirs {
-		entries, err := os.ReadDir(root)
+		candidates, err := extensionDirs(root)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
 			errs = append(errs, fmt.Errorf("%s: %w", root, err))
 			continue
-		}
-		candidates := make([]string, 0, len(entries))
-		for _, e := range entries {
-			if e.IsDir() {
-				candidates = append(candidates, filepath.Join(root, e.Name()))
-			}
 		}
 		// An explicit --ext points at the extension itself, not its parent.
 		if filepath.Base(root) != "extensions" && filepath.Base(root) != ".zot" {

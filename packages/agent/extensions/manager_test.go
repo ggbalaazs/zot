@@ -219,6 +219,40 @@ func TestSpawnCleansUpProcessAfterInvalidHello(t *testing.T) {
 	}
 }
 
+func TestPlanSkillSourcesFollowsSymlinkedExtension(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("directory symlinks require elevated privileges on Windows")
+	}
+
+	tmp := t.TempDir()
+	extRoot := filepath.Join(tmp, "extensions")
+	target := filepath.Join(tmp, "target")
+	if err := os.MkdirAll(filepath.Join(target, "skills", "review"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "extension.json"), []byte(`{"name":"linked","skills":["./skills"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(target, "skills", "review", "SKILL.md"), []byte("---\ndescription: linked\n---\nbody"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(extRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(extRoot, "linked")); err != nil {
+		t.Fatal(err)
+	}
+
+	sources, errs := PlanSkillSources(tmp, "", nil, true)
+	if len(errs) != 0 || len(sources) != 1 {
+		t.Fatalf("sources=%#v errs=%v", sources, errs)
+	}
+	got, errs := skills.DiscoverSources(sources, false)
+	if len(errs) != 0 || len(got) != 1 || got[0].Name != "linked:review" {
+		t.Fatalf("skills=%#v errs=%v", got, errs)
+	}
+}
+
 func TestPlanSkillSources(t *testing.T) {
 	tmp := t.TempDir()
 	extDir := filepath.Join(tmp, "bundle")
