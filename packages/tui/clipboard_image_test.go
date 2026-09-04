@@ -71,6 +71,9 @@ func TestNormalizeClipboardImagePNGEnforcesLimits(t *testing.T) {
 }
 
 func TestWriteClipboardPNGFileUsesRestrictivePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows FileMode permission bits do not represent ACL access")
+	}
 	path := filepath.Join(t.TempDir(), "clipboard.png")
 	if err := writeClipboardPNGFile(path, testClipboardPNG(t)); err != nil {
 		t.Fatal(err)
