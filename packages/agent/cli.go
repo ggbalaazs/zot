@@ -1405,7 +1405,15 @@ func runInteractive(ctx context.Context, args Args, version string) error {
 			// model still sees them through the system-prompt
 			// manifest and the skill tool.
 			userHome, _ := os.UserHomeDir()
-			list, _ := skills.Discover(ZotHome(), r.CWD, userHome, args.WithSkills)
+			var sources []skills.Source
+			if args.WithSkills {
+				sources = append(sources, skills.SearchSources(ZotHome(), r.CWD, userHome)...)
+			}
+			if !args.NoExt || len(args.Exts) > 0 {
+				extSources, _ := extensions.PlanSkillSources(ZotHome(), r.CWD, args.Exts, !args.NoExt)
+				sources = append(extSources, sources...)
+			}
+			list, _ := skills.DiscoverSources(sources, true)
 			return skills.VisibleSkills(list)
 		},
 		NoYolo:      args.NoYolo,

@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/patriceckhart/zot/packages/agent/extproto"
+	"github.com/patriceckhart/zot/packages/agent/skills"
 	"github.com/patriceckhart/zot/packages/tui"
 )
 
@@ -43,6 +44,7 @@ type Manifest struct {
 	Language    string   `json:"language,omitempty"` // informational ("go", "python", "typescript", ...)
 	Enabled     *bool    `json:"enabled,omitempty"`  // nil = enabled
 	Description string   `json:"description,omitempty"`
+	Skills      []string `json:"skills,omitempty"`
 }
 
 // IsEnabled returns the manifest's effective enabled state. Default
@@ -248,24 +250,127 @@ func (m *Manager) searchDirs() []string {
 	return dirs
 }
 
-// loadOne reads a single extension's manifest and, if enabled,
-// spawns its subprocess + completes the hello handshake.
-func (m *Manager) loadOne(ctx context.Context, dir string) error {
-	manifestPath := filepath.Join(dir, "extension.json")
-	raw, err := os.ReadFile(manifestPath)
+// PlanSkillSources reads extension manifests without starting processes and
+// returns their filesystem-backed skill roots in precedence order. Explicit
+// extensions win over project and global installations; project wins global.
+func PlanSkillSources(zotHome, cwd string, explicit []string, includeImplicit bool) ([]skills.Source, []error) {
+	var dirs []string
+	for _, p := range explicit {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			continue
+		}
+		dirs = append(dirs, abs)
+	}
+	if includeImplicit {
+		if cwd != "" {
+			dirs = append(dirs, filepath.Join(cwd, ".zot", "extensions"))
+		}
+		if zotHome != "" {
+			dirs = append(dirs, filepath.Join(zotHome, "extensions"))
+		}
+	}
+	seen := map[string]bool{}
+	var out []skills.Source
+	var errs []error
+	for _, root := range dirs {
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			errs = append(errs, fmt.Errorf("%s: %w", root, err))
+			continue
+		}
+		candidates := make([]string, 0, len(entries))
+		for _, e := range entries {
+			if e.IsDir() {
+				candidates = append(candidates, filepath.Join(root, e.Name()))
+			}
+		}
+		// An explicit --ext points at the extension itself, not its parent.
+		if filepath.Base(root) != "extensions" && filepath.Base(root) != ".zot" {
+			candidates = []string{root}
+		}
+		for _, dir := range candidates {
+			mf, err := readManifest(dir)
+			if err != nil {
+				if !os.IsNotExist(err) {
+					errs = append(errs, fmt.Errorf("%s: %w", dir, err))
+				}
+				continue
+			}
+			if mf.Name == "" {
+				errs = append(errs, fmt.Errorf("%s: manifest: name is required", dir))
+				continue
+			}
+			if seen[mf.Name] || !mf.IsEnabled() {
+				continue
+			}
+			hasTheme := HasExtensionTheme(dir)
+			if mf.Exec == "" && !hasTheme && len(mf.Skills) == 0 {
+				errs = append(errs, fmt.Errorf("%s: manifest: exec, theme, or skills is required", dir))
+				continue
+			}
+			seen[mf.Name] = true
+			for _, entry := range mf.Skills {
+				path, err := skillEntryPath(dir, entry)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("%s: %w", dir, err))
+					continue
+				}
+				label := "extension " + mf.Name
+				out = append(out, skills.Source{Root: path, Label: label, Prefix: skills.KebabCase(mf.Name) + ":"})
+			}
+		}
+	}
+	return out, errs
+}
+
+func readManifest(dir string) (Manifest, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, "extension.json"))
 	if err != nil {
-		return fmt.Errorf("read manifest: %w", err)
+		return Manifest{}, err
 	}
 	var mf Manifest
 	if err := json.Unmarshal(raw, &mf); err != nil {
-		return fmt.Errorf("parse manifest: %w", err)
+		return Manifest{}, fmt.Errorf("parse manifest: %w", err)
+	}
+	return mf, nil
+}
+
+func skillEntryPath(dir, entry string) (string, error) {
+	if strings.TrimSpace(entry) == "" {
+		return "", errors.New("manifest: empty skill path")
+	}
+	path := filepath.Clean(filepath.Join(dir, entry))
+	rel, err := filepath.Rel(dir, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("manifest: skill path %q escapes extension directory", entry)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("manifest: skill path %q: %w", entry, err)
+	}
+	if !info.IsDir() && filepath.Base(path) != "SKILL.md" {
+		return "", fmt.Errorf("manifest: skill path %q is not a directory or SKILL.md", entry)
+	}
+	return path, nil
+}
+
+// loadOne reads a single extension's manifest and, if enabled,
+// spawns its subprocess + completes the hello handshake.
+func (m *Manager) loadOne(ctx context.Context, dir string) error {
+	mf, err := readManifest(dir)
+	if err != nil {
+		return err
 	}
 	if mf.Name == "" {
 		return errors.New("manifest: name is required")
 	}
 	hasTheme := HasExtensionTheme(dir)
-	if mf.Exec == "" && !hasTheme {
-		return errors.New("manifest: exec is required")
+	if mf.Exec == "" && !hasTheme && len(mf.Skills) == 0 {
+		return errors.New("manifest: exec, theme, or skills is required")
 	}
 	if !mf.IsEnabled() {
 		// Quietly skip disabled extensions; zot ext list will show them.

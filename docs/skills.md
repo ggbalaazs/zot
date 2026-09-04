@@ -1,7 +1,8 @@
 # zot skills
 
 A skill is a reusable instruction set written as a single
-`SKILL.md` file with a YAML frontmatter header. Unless a skill disables
+`SKILL.md` file with a YAML frontmatter header. Skills may be supplied by
+an extension as well as by the normal skill directories. Unless a skill disables
 model invocation, zot discovers it at startup and surfaces it to the model
 in two ways:
 
@@ -34,7 +35,7 @@ When asked to review code, ...
 
 | field | required | purpose |
 |---|---|---|
-| `name` | optional | skill identifier; defaults to the directory name |
+| `name` | optional | skill identifier; defaults to the normalized relative directory path |
 | `description` | required | one-line summary shown in the system prompt |
 | `disable-model-invocation` | optional | when `true`, hide the skill from the model's startup manifest; invoke it explicitly with `/skill:<name>` |
 | `allowed-tools` | optional | list of tool names the skill is meant to use; informational |
@@ -49,7 +50,7 @@ There's no template engine; the model sees what you write.
 
 ## Discovery
 
-zot looks in these directories, in priority order, and registers the
+zot recursively looks in these directories, in priority order, and registers the
 first `SKILL.md` it finds for each unique name:
 
 | location | scope |
@@ -64,7 +65,16 @@ first `SKILL.md` it finds for each unique name:
 The compat paths are deliberate: a `SKILL.md` written for an existing
 skill ecosystem works in zot unchanged. Drop your existing
 `.claude/skills/` or `.agents/skills/` directories into a project and
-zot will pick them up.
+zot will pick them up. When no frontmatter `name` is present, nested path
+components are lowercased and normalized to kebab-case and joined with `-`.
+Only files named exactly `SKILL.md` are read.
+
+Extensions namespace their skills, for example `git-tools:writing-git-commits`.
+Explicit `--ext` bundles take precedence over environment, project, global, and
+compatibility sources. Duplicate names keep the higher-precedence file and
+report a diagnostic. `--no-ext` omits implicit extension bundles;
+`--no-ext --ext PATH` loads only the explicitly named bundle. `--no-skill`
+disables all skills, including extension and built-in skills.
 
 When `XDG_STATE_HOME` is set on any platform, `$ZOT_HOME` defaults to
 `$XDG_STATE_HOME/zot`. Otherwise it defaults to `~/Library/Application Support/zot/`
@@ -113,10 +123,11 @@ are omitted from the model's startup context.
 
 ## Examples
 
-See `examples/skills/` for two starter skills:
+See `examples/skills/` for starter skills:
 
 - `code-review/` — self-review pass on a recent diff
 - `test-fix/` — diagnose + minimally fix a failing test
+- `recursive/` — nested path-derived naming and explicit-name discovery
 
 ## Comparison to other discovery layouts
 

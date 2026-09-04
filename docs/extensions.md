@@ -60,7 +60,8 @@ Drop it in a directory with this `extension.json`:
 
 `exec` is required for protocol extensions. If an extension only ships
 `theme.json` or `themes/theme.json`, no `exec` is required and zot does
-not spawn a subprocess.
+not spawn a subprocess. A skill-only bundle may instead provide a `skills`
+array and is also never spawned.
 
 `chmod +x hello.py`, install:
 
@@ -130,6 +131,7 @@ manifest tells zot how to launch it:
 | `args` | optional. extra argv passed to `exec`. |
 | `language` | optional. informational only (`go`, `python`, `typescript`, ...). |
 | `description` | optional. shown in `zot ext list`. |
+| `skills` | optional. directories (recursively scanned) or direct `SKILL.md` paths, relative to the manifest. |
 | `enabled` | optional, defaults to `true`. set to `false` to disable without removing. |
 
 ## Lifecycle

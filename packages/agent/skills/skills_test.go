@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -91,6 +92,60 @@ func TestDiscoverProjectAndGlobalPriorityAndDedup(t *testing.T) {
 		if FindByName(skills, b.Name) == nil {
 			t.Errorf("built-in skill %q missing from Discover output", b.Name)
 		}
+	}
+}
+
+func TestKebabCase(t *testing.T) {
+	cases := map[string]string{
+		"writing-git-commits": "writing-git-commits",
+		"Writing Git Commits": "writing-git-commits",
+		"git_commits":         "git-commits",
+		"git.commits":         "git-commits",
+		"Git/Commits":         "git-commits",
+	}
+	for in, want := range cases {
+		if got := KebabCase(in); got != want {
+			t.Errorf("KebabCase(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestDiscoverSourcesRecursiveAndPrefixed(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "Something", "Writing Git Commits")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\ndescription: nested\n---\nbody"
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, errs := DiscoverSources([]Source{{Root: root, Label: "extension Git Tools", Prefix: "git-tools:"}}, false)
+	if len(errs) != 0 {
+		t.Fatalf("errs: %v", errs)
+	}
+	if len(got) != 1 || got[0].Name != "git-tools:something-writing-git-commits" {
+		t.Fatalf("skills = %#v", got)
+	}
+	if got[0].Source != "extension Git Tools" || got[0].Body != "body" {
+		t.Errorf("skill metadata = %#v", got[0])
+	}
+}
+
+func TestDiscoverSourcesDuplicateDiagnostic(t *testing.T) {
+	a, b := t.TempDir(), t.TempDir()
+	for _, root := range []string{a, b} {
+		dir := filepath.Join(root, "review")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("---\nname: review\n---\nbody"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, errs := DiscoverSources([]Source{{Root: a}, {Root: b}}, false)
+	if len(got) != 1 || len(errs) != 1 || !strings.Contains(errs[0].Error(), "shadowed") {
+		t.Fatalf("got=%#v errs=%v", got, errs)
 	}
 }
 

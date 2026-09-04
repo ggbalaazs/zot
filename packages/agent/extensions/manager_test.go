@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/patriceckhart/zot/packages/agent/extproto"
+	"github.com/patriceckhart/zot/packages/agent/skills"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -215,6 +216,45 @@ func TestSpawnCleansUpProcessAfterInvalidHello(t *testing.T) {
 	}
 	if _, err := ext.logFile.WriteString("after cleanup"); err == nil {
 		t.Fatal("failed handshake log file was not closed")
+	}
+}
+
+func TestPlanSkillSources(t *testing.T) {
+	tmp := t.TempDir()
+	extDir := filepath.Join(tmp, "bundle")
+	skillDir := filepath.Join(extDir, "skills", "Writing Git Commits")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\ndescription: commits\n---\nbody"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"name":"Git Tools","skills":["./skills"],"enabled":true}`
+	if err := os.WriteFile(filepath.Join(extDir, "extension.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sources, errs := PlanSkillSources("", "", []string{extDir}, false)
+	if len(errs) != 0 || len(sources) != 1 {
+		t.Fatalf("sources=%#v errs=%v", sources, errs)
+	}
+	got, errs := skills.DiscoverSources(sources, false)
+	if len(errs) != 0 || len(got) != 1 || got[0].Name != "git-tools:writing-git-commits" {
+		t.Fatalf("skills=%#v errs=%v", got, errs)
+	}
+}
+
+func TestPlanSkillSourcesRejectsTraversal(t *testing.T) {
+	tmp := t.TempDir()
+	extDir := filepath.Join(tmp, "bundle")
+	if err := os.MkdirAll(extDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extDir, "extension.json"), []byte(`{"name":"bad","skills":["../outside"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, errs := PlanSkillSources("", "", []string{extDir}, false)
+	if len(errs) == 0 || !strings.Contains(errs[0].Error(), "escapes") {
+		t.Fatalf("errs=%v", errs)
 	}
 }
 

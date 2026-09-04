@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	zotdocs "github.com/patriceckhart/zot"
+	"github.com/patriceckhart/zot/packages/agent/extensions"
 	"github.com/patriceckhart/zot/packages/agent/skills"
 	"github.com/patriceckhart/zot/packages/agent/tools"
 	"github.com/patriceckhart/zot/packages/core"
@@ -595,7 +596,17 @@ func Resolve(args Args, requireCred bool) (Resolved, error) {
 	)
 	if !args.NoSkill {
 		homeDir, _ := os.UserHomeDir()
-		discovered, _ = skills.Discover(ZotHome(), args.CWD, homeDir, args.WithSkills)
+		var sources []skills.Source
+		if args.WithSkills {
+			for _, loc := range skills.SearchSources(ZotHome(), args.CWD, homeDir) {
+				sources = append(sources, loc)
+			}
+		}
+		if !args.NoExt || len(args.Exts) > 0 {
+			extSources, _ := extensions.PlanSkillSources(ZotHome(), args.CWD, args.Exts, !args.NoExt)
+			sources = append(extSources, sources...)
+		}
+		discovered, _ = skills.DiscoverSources(sources, true)
 		if len(discovered) > 0 {
 			skillTool = skills.NewTool(discovered)
 			reg[skillTool.Name()] = skillTool

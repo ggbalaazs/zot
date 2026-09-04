@@ -32,6 +32,14 @@ import (
 )
 
 // Skill is one discovered SKILL.md file.
+// Source describes one directory of skills. Sources are evaluated in order;
+// the first skill with a canonical name wins.
+type Source struct {
+	Root   string
+	Label  string
+	Prefix string
+}
+
 type Skill struct {
 	// Name is the skill identifier — what the model uses when it
 	// invokes the `skill` tool. Taken from the frontmatter `name`
@@ -102,18 +110,48 @@ func VisibleSkills(in []*Skill) []*Skill {
 // Errors per skill are returned alongside the partial result so a
 // single broken file doesn't suppress the rest.
 func Discover(zotHome, cwd, userHome string, includeUser bool) ([]*Skill, []error) {
+	var sources []Source
+	if includeUser {
+		for _, loc := range searchDirs(zotHome, cwd, userHome) {
+			sources = append(sources, Source{Root: loc.dir, Label: loc.label})
+		}
+	}
+	discovered, errs := DiscoverSources(sources, includeUser)
+	// Preserve the historical Discover contract: duplicate ordinary skills
+	// were silently ignored. New callers using DiscoverSources receive the
+	// richer shadowing diagnostics.
+	filtered := errs[:0]
+	for _, err := range errs {
+		if !strings.Contains(err.Error(), " shadowed: ") {
+			filtered = append(filtered, err)
+		}
+	}
+	return discovered, filtered
+}
+
+// DiscoverSources recursively discovers SKILL.md files from sources in
+// precedence order, then appends built-ins when includeUser is true or false.
+// It returns non-fatal diagnostics for malformed files and shadowed names.
+func DiscoverSources(sources []Source, includeBuiltins bool) ([]*Skill, []error) {
 	var errs []error
 	seen := map[string]*Skill{}
-	if includeUser {
-		errs = append(errs, scanUserSkills(zotHome, cwd, userHome, seen)...)
-	}
-	// Built-ins fill in any name the user didn't already provide
-	// (or every name, when includeUser is false).
-	for _, s := range loadBuiltins() {
-		if _, dup := seen[s.Name]; dup {
-			continue
+	for _, source := range sources {
+		found, scanErrs := scanSource(source)
+		errs = append(errs, scanErrs...)
+		for _, s := range found {
+			if prior, dup := seen[s.Name]; dup {
+				errs = append(errs, fmt.Errorf("skill %q shadowed: selected %s; ignored %s", s.Name, prior.Path, s.Path))
+				continue
+			}
+			seen[s.Name] = s
 		}
-		seen[s.Name] = s
+	}
+	if includeBuiltins {
+		for _, s := range loadBuiltins() {
+			if _, dup := seen[s.Name]; !dup {
+				seen[s.Name] = s
+			}
+		}
 	}
 	out := make([]*Skill, 0, len(seen))
 	for _, s := range seen {
@@ -121,6 +159,96 @@ func Discover(zotHome, cwd, userHome string, includeUser bool) ([]*Skill, []erro
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, errs
+}
+
+func scanSource(source Source) ([]*Skill, []error) {
+	var out []*Skill
+	var errs []error
+	info, err := os.Stat(source.Root)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			errs = append(errs, fmt.Errorf("%s: %w", source.Root, err))
+		}
+		return out, errs
+	}
+	if !info.IsDir() {
+		if filepath.Base(source.Root) != "SKILL.md" {
+			return out, errs
+		}
+		s, e := load(source.Root, source.Label)
+		if e != nil {
+			return out, []error{fmt.Errorf("%s: %w", source.Root, e)}
+		}
+		if s.Name == "" {
+			s.Name = kebabCase(strings.TrimSuffix(filepath.Base(filepath.Dir(source.Root)), ""))
+		}
+		if source.Prefix != "" {
+			s.Name = source.Prefix + s.Name
+		}
+		return []*Skill{s}, nil
+	}
+	err = filepath.WalkDir(source.Root, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", path, walkErr))
+			return nil
+		}
+		if d.IsDir() || d.Name() != "SKILL.md" {
+			return nil
+		}
+		s, e := load(path, source.Label)
+		if e != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", path, e))
+			return nil
+		}
+		if s.Name == "" {
+			rel, e := filepath.Rel(source.Root, filepath.Dir(path))
+			if e != nil {
+				errs = append(errs, e)
+				return nil
+			}
+			parts := []string{}
+			if rel != "." {
+				for _, p := range strings.Split(filepath.ToSlash(rel), "/") {
+					if k := kebabCase(p); k != "" {
+						parts = append(parts, k)
+					}
+				}
+			}
+			if len(parts) == 0 {
+				parts = append(parts, kebabCase(filepath.Base(filepath.Dir(path))))
+			}
+			s.Name = strings.Join(parts, "-")
+		}
+		if source.Prefix != "" {
+			s.Name = source.Prefix + s.Name
+		}
+		out = append(out, s)
+		return nil
+	})
+	if err != nil {
+		errs = append(errs, fmt.Errorf("scan %s: %w", source.Root, err))
+	}
+	return out, errs
+}
+
+// KebabCase converts a path component or display name to a stable skill name.
+func KebabCase(s string) string { return kebabCase(s) }
+
+func kebabCase(s string) string {
+	var b strings.Builder
+	sep := false
+	for _, r := range strings.ToLower(s) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			if sep && b.Len() > 0 {
+				b.WriteByte('-')
+			}
+			b.WriteRune(r)
+			sep = false
+		} else {
+			sep = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 // scanUserSkills walks the user-skill search dirs and populates
@@ -227,6 +355,15 @@ func FindByName(skills []*Skill, name string) *Skill {
 type location struct {
 	dir   string
 	label string
+}
+
+// SearchSources returns the ordinary skill roots in precedence order.
+func SearchSources(zotHome, cwd, userHome string) []Source {
+	out := make([]Source, 0)
+	for _, loc := range searchDirs(zotHome, cwd, userHome) {
+		out = append(out, Source{Root: loc.dir, Label: loc.label})
+	}
+	return out
 }
 
 func searchDirs(zotHome, cwd, userHome string) []location {
