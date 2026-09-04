@@ -13,6 +13,16 @@ import (
 // advertises OpenRouter server tools.
 const OpenRouterServerToolCallLimit = 4
 
+// ResolveToolCallLimit returns n when it is a positive int, otherwise the
+// built-in default. This lets callers resolve a config.json *int without
+// importing the agent config package.
+func ResolveToolCallLimit(n *int) int {
+	if n != nil && *n > 0 {
+		return *n
+	}
+	return OpenRouterServerToolCallLimit
+}
+
 // OpenRouterServerToolNames lists every OpenRouter server tool that zot
 // can advertise on Chat Completions. Shell, bash, apply_patch, and
 // tool_search require Responses/Messages and are omitted here.

@@ -73,6 +73,10 @@ type Config struct {
 	// Default off: users explicitly opt in from /settings.
 	OpenRouterServerToolsEnabled *bool `json:"openrouter_server_tools_enabled,omitempty"`
 
+	// OpenRouterServerToolCallLimit caps OpenRouter server-tool calls per turn
+	// when server tools are enabled. nil/missing uses the built-in default (4).
+	OpenRouterServerToolCallLimit *int `json:"openrouter_server_tool_call_limit,omitempty"`
+
 	// RecursiveFileSuggest controls the @-mention file picker. When true
 	// the picker fuzzy-searches the whole project tree below the working
 	// directory; nil/missing/false keeps the default directory-by-

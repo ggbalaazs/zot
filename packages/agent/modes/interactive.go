@@ -76,6 +76,10 @@ type InteractiveConfig struct {
 	// nil means the default, off.
 	OpenRouterServerToolsEnabled *bool
 
+	// OpenRouterServerToolCallLimit mirrors the persisted call limit.
+	// nil means the built-in default (4).
+	OpenRouterServerToolCallLimit *int
+
 	// NoTools preserves the launch-time promise that all tools stay disabled.
 	NoTools bool
 
@@ -6680,7 +6684,7 @@ func (i *Interactive) applyOpenRouterServerTools(active bool) {
 		for _, t := range tools.OpenRouterServerTools() {
 			next[t.Name()] = t
 		}
-		i.agent.MaxToolCalls = tools.OpenRouterServerToolCallLimit
+		i.agent.MaxToolCalls = tools.ResolveToolCallLimit(i.cfg.OpenRouterServerToolCallLimit)
 	}
 	i.agent.SetTools(next)
 }
