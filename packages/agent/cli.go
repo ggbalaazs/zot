@@ -296,6 +296,7 @@ func (nonInteractiveExtHooks) ClosePanel(string, string)                        
 // wire tools into the resolved registry, and a cleanup closure to
 // defer. Mirrors the interactive-mode setup minus the TUI hooks.
 func setupNonInteractiveExtensions(ctx context.Context, args Args, r *Resolved, version string) (*extensions.Manager, func()) {
+	reportSkillDiagnostics(os.Stderr, r.SkillDiagnostics)
 	extMgr := extensions.New(ZotHome(), r.CWD, version, r.Provider, r.Model, nonInteractiveExtHooks{})
 	for _, e := range extMgr.LoadExplicit(ctx, args.Exts) {
 		fmt.Fprintln(os.Stderr, "extension load:", e)
@@ -309,6 +310,12 @@ func setupNonInteractiveExtensions(ctx context.Context, args Args, r *Resolved, 
 	r.MergeExtensionTools(&extToolAdapter{mgr: extMgr})
 	extMgr.EmitEvent(extproto.EventFromHost{Event: "session_start"})
 	return extMgr, func() { extMgr.Stop(2 * time.Second) }
+}
+
+func reportSkillDiagnostics(w io.Writer, diagnostics []string) {
+	for _, diagnostic := range diagnostics {
+		fmt.Fprintln(w, "skill discovery:", diagnostic)
+	}
 }
 
 // wireNonInteractiveAgentExtHooks installs the same BeforeToolExecute
@@ -658,7 +665,10 @@ func runInteractive(ctx context.Context, args Args, version string) error {
 	var iv *modes.Interactive
 	extHooks := &interactiveExtHooks{ivPtr: &iv}
 	extMgr := extensions.New(ZotHome(), r.CWD, version, r.Provider, r.Model, extHooks)
-	var startupExtensionErrors []string
+	startupExtensionErrors := make([]string, 0, len(r.SkillDiagnostics))
+	for _, diagnostic := range r.SkillDiagnostics {
+		startupExtensionErrors = append(startupExtensionErrors, "skill discovery: "+diagnostic)
+	}
 	// --ext paths first so they win against installed extensions of
 	// the same name (loadOne's first-write-wins semantics).
 	for _, e := range extMgr.LoadExplicit(ctx, args.Exts) {

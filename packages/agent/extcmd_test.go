@@ -155,13 +155,14 @@ func TestExtDoctorStaticScanAndRender(t *testing.T) {
 	mustWrite(filepath.Join(cwd, ".zot", "extensions", "disabled", "extension.json"), `{"name":"disabled","exec":"./run.sh","enabled":false}`)
 	mustWrite(filepath.Join(cwd, ".zot", "extensions", "theme", "extension.json"), `{"name":"theme"}`)
 	mustWrite(filepath.Join(cwd, ".zot", "extensions", "theme", "theme.json"), `{"name":"Theme"}`)
+	mustWrite(filepath.Join(cwd, ".zot", "extensions", "skills", "extension.json"), `{"name":"skills","skills":["./skills"]}`)
 	mustWrite(filepath.Join(cwd, ".zot", "extensions", "bad", "extension.json"), `{bad json`)
 	mustWrite(filepath.Join(cwd, ".zot", "extensions", "dup", "extension.json"), `{"name":"dup","exec":"./project.sh"}`)
 	mustWrite(filepath.Join(home, "extensions", "dup", "extension.json"), `{"name":"dup","exec":"./global.sh"}`)
 
 	rows := scanExtDoctorStatic()
-	if len(rows) != 5 {
-		t.Fatalf("rows = %d, want 5: %#v", len(rows), rows)
+	if len(rows) != 6 {
+		t.Fatalf("rows = %d, want 6: %#v", len(rows), rows)
 	}
 
 	var out bytes.Buffer
@@ -172,6 +173,7 @@ func TestExtDoctorStaticScanAndRender(t *testing.T) {
 	for _, want := range []string{
 		"disabled [project] disabled",
 		"theme [project] theme-only",
+		"skills [project] skill-only",
 		"bad [project] error",
 		"dup [global] shadowed",
 		"parse manifest:",

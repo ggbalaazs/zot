@@ -150,6 +150,7 @@ type extDoctorStaticRow struct {
 	Dir      string
 	Exec     string
 	Theme    bool
+	Skills   bool
 	Manifest string
 	Error    string
 	Shadowed bool
@@ -239,10 +240,11 @@ func scanExtDoctorStatic() []extDoctorStaticRow {
 				continue
 			}
 			var m struct {
-				Name    string `json:"name"`
-				Version string `json:"version"`
-				Exec    string `json:"exec"`
-				Enabled *bool  `json:"enabled"`
+				Name    string   `json:"name"`
+				Version string   `json:"version"`
+				Exec    string   `json:"exec"`
+				Skills  []string `json:"skills"`
+				Enabled *bool    `json:"enabled"`
 			}
 			if err := json.Unmarshal(raw, &m); err != nil {
 				row.Error = "parse manifest: " + err.Error()
@@ -256,11 +258,12 @@ func scanExtDoctorStatic() []extDoctorStaticRow {
 			}
 			row.Version = m.Version
 			row.Exec = m.Exec
+			row.Skills = len(m.Skills) > 0
 			if m.Enabled != nil {
 				row.Enabled = *m.Enabled
 			}
-			if row.Exec == "" && !row.Theme && row.Error == "" {
-				row.Error = "manifest: exec is required"
+			if row.Exec == "" && !row.Theme && !row.Skills && row.Error == "" {
+				row.Error = "manifest: exec, theme, or skills is required"
 			}
 			rows = append(rows, row)
 		}
@@ -277,8 +280,12 @@ func printExtDoctorRow(w io.Writer, row extDoctorStaticRow, diag extensions.Exte
 		status = "shadowed"
 	case !row.Enabled:
 		status = "disabled"
-	case row.Exec == "" && row.Theme:
+	case row.Exec == "" && row.Theme && !row.Skills:
 		status = "theme-only"
+	case row.Exec == "" && row.Skills && !row.Theme:
+		status = "skill-only"
+	case row.Exec == "" && row.Theme && row.Skills:
+		status = "static-only"
 	case diag.Name == "":
 		status = "not loaded"
 	case diag.ReadyTimedOut:
@@ -309,8 +316,8 @@ func printExtDoctorRow(w io.Writer, row extDoctorStaticRow, diag extensions.Exte
 		fmt.Fprintln(w, "  note: disabled in extension.json")
 		return
 	}
-	if row.Exec == "" && row.Theme {
-		fmt.Fprintln(w, "  type: theme-only")
+	if row.Exec == "" && (row.Theme || row.Skills) {
+		fmt.Fprintf(w, "  type: %s\n", status)
 		return
 	}
 	if row.Exec != "" {

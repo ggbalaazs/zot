@@ -218,6 +218,7 @@ func botRun(spec *botSpec, rawTail []string, version string) error {
 	if err != nil {
 		return err
 	}
+	reportSkillDiagnostics(os.Stderr, resolved.SkillDiagnostics)
 
 	if ok, cerr := spec.configured(ZotHome()); cerr != nil {
 		return cerr

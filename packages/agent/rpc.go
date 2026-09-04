@@ -48,6 +48,7 @@ func runRPCMode(ctx context.Context, args Args, version string) error {
 	if err != nil {
 		return err
 	}
+	reportSkillDiagnostics(os.Stderr, r.SkillDiagnostics)
 
 	// Extensions: same lifecycle as interactive mode, minus the
 	// host-hooks integration. Notify/Display calls from extensions

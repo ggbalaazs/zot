@@ -277,42 +277,49 @@ func extensionDirs(root string) ([]string, error) {
 // returns their filesystem-backed skill roots in precedence order. Explicit
 // extensions win over project and global installations; project wins global.
 func PlanSkillSources(zotHome, cwd string, explicit []string, includeImplicit bool) ([]skills.Source, []error) {
-	var dirs []string
+	type root struct {
+		path     string
+		explicit bool
+	}
+	var roots []root
+	var errs []error
 	for _, p := range explicit {
 		abs, err := filepath.Abs(p)
 		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", p, err))
 			continue
 		}
-		dirs = append(dirs, abs)
+		roots = append(roots, root{path: abs, explicit: true})
 	}
 	if includeImplicit {
 		if cwd != "" {
-			dirs = append(dirs, filepath.Join(cwd, ".zot", "extensions"))
+			roots = append(roots, root{path: filepath.Join(cwd, ".zot", "extensions")})
 		}
 		if zotHome != "" {
-			dirs = append(dirs, filepath.Join(zotHome, "extensions"))
+			roots = append(roots, root{path: filepath.Join(zotHome, "extensions")})
 		}
 	}
 	seen := map[string]bool{}
 	var out []skills.Source
-	var errs []error
-	for _, root := range dirs {
-		candidates, err := extensionDirs(root)
-		if err != nil {
-			if os.IsNotExist(err) {
+	for _, root := range roots {
+		var candidates []string
+		if root.explicit {
+			candidates = []string{root.path}
+		} else {
+			var err error
+			candidates, err = extensionDirs(root.path)
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				errs = append(errs, fmt.Errorf("%s: %w", root.path, err))
 				continue
 			}
-			errs = append(errs, fmt.Errorf("%s: %w", root, err))
-			continue
-		}
-		// An explicit --ext points at the extension itself, not its parent.
-		if filepath.Base(root) != "extensions" && filepath.Base(root) != ".zot" {
-			candidates = []string{root}
 		}
 		for _, dir := range candidates {
 			mf, err := readManifest(dir)
 			if err != nil {
-				if !os.IsNotExist(err) {
+				if root.explicit || !os.IsNotExist(err) {
 					errs = append(errs, fmt.Errorf("%s: %w", dir, err))
 				}
 				continue

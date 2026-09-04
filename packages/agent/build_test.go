@@ -219,6 +219,27 @@ func TestResolveExplicitFlagStaleDoesNotRepairConfig(t *testing.T) {
 	}
 }
 
+func TestResolveReportsExtensionSkillDiagnostics(t *testing.T) {
+	home := t.TempDir()
+	project := t.TempDir()
+	t.Setenv("ZOT_HOME", home)
+	extDir := filepath.Join(project, ".zot", "extensions", "bad-skills")
+	if err := os.MkdirAll(extDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extDir, "extension.json"), []byte(`{"name":"bad-skills","skills":["../outside"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := Resolve(Args{CWD: project, WithSkills: true}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.SkillDiagnostics) != 1 || !strings.Contains(r.SkillDiagnostics[0], "escapes extension directory") {
+		t.Fatalf("SkillDiagnostics = %v", r.SkillDiagnostics)
+	}
+}
+
 func TestNewAgentInjectsOpenRouterServerToolsWhenSettingOn(t *testing.T) {
 	t.Setenv("ZOT_HOME", t.TempDir())
 	t.Setenv("OPENROUTER_API_KEY", "test-key")

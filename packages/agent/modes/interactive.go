@@ -45,8 +45,9 @@ type InteractiveConfig struct {
 	StartupExtensionNames []string
 	StartupSkillNames     []string
 
-	// StartupExtensionErrors are non-fatal extension load failures collected
-	// before the TUI starts. They are display-only and never enter the transcript.
+	// StartupExtensionErrors contains non-fatal extension and skill discovery
+	// failures collected before the TUI starts. It is display-only and never
+	// enters the transcript. The historical field name is retained for callers.
 	StartupExtensionErrors []string
 
 	// ShowInstructionsAtStartup controls whether startup resources are visible.
@@ -543,8 +544,8 @@ type Interactive struct {
 	// transcript) until cleared by /clear or another reset.
 	extNotes []string
 
-	// reloadErrors are host-only extension reload failures. They stay in
-	// the scrolling chat until /clear without entering the agent transcript.
+	// reloadErrors are host-only resource discovery and reload failures. They
+	// stay in the scrolling chat until /clear without entering the transcript.
 	reloadErrors []string
 
 	// shellRunning is true while a !command is executing. It shares

@@ -277,6 +277,26 @@ func TestPlanSkillSources(t *testing.T) {
 	}
 }
 
+func TestPlanSkillSourcesExplicitBundleNamedExtensions(t *testing.T) {
+	tmp := t.TempDir()
+	extDir := filepath.Join(tmp, "extensions")
+	skillDir := filepath.Join(extDir, "skills", "review")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extDir, "extension.json"), []byte(`{"name":"named-extensions","skills":["./skills"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\ndescription: review\n---\nbody"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sources, errs := PlanSkillSources("", "", []string{extDir}, false)
+	if len(errs) != 0 || len(sources) != 1 {
+		t.Fatalf("sources=%#v errs=%v", sources, errs)
+	}
+}
+
 func TestPlanSkillSourcesRejectsTraversal(t *testing.T) {
 	tmp := t.TempDir()
 	extDir := filepath.Join(tmp, "bundle")

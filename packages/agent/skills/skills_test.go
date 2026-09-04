@@ -96,6 +96,18 @@ func TestDiscoverProjectAndGlobalPriorityAndDedup(t *testing.T) {
 	}
 }
 
+func TestDiscoverWithoutUserSkillsStillIncludesBuiltins(t *testing.T) {
+	got, errs := Discover("", "", "", false)
+	if len(errs) != 0 {
+		t.Fatalf("errs: %v", errs)
+	}
+	for _, builtin := range loadBuiltins() {
+		if FindByName(got, builtin.Name) == nil {
+			t.Errorf("built-in skill %q missing", builtin.Name)
+		}
+	}
+}
+
 func TestKebabCase(t *testing.T) {
 	cases := map[string]string{
 		"writing-git-commits": "writing-git-commits",

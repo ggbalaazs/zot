@@ -116,7 +116,7 @@ func Discover(zotHome, cwd, userHome string, includeUser bool) ([]*Skill, []erro
 			sources = append(sources, Source{Root: loc.dir, Label: loc.label})
 		}
 	}
-	discovered, errs := DiscoverSources(sources, includeUser)
+	discovered, errs := DiscoverSources(sources, true)
 	// Preserve the historical Discover contract: duplicate ordinary skills
 	// were silently ignored. New callers using DiscoverSources receive the
 	// richer shadowing diagnostics.
@@ -148,9 +148,11 @@ func DiscoverSources(sources []Source, includeBuiltins bool) ([]*Skill, []error)
 	}
 	if includeBuiltins {
 		for _, s := range loadBuiltins() {
-			if _, dup := seen[s.Name]; !dup {
-				seen[s.Name] = s
+			if prior, dup := seen[s.Name]; dup {
+				errs = append(errs, fmt.Errorf("skill %q shadowed: selected %s; ignored %s", s.Name, prior.Path, s.Path))
+				continue
 			}
+			seen[s.Name] = s
 		}
 	}
 	out := make([]*Skill, 0, len(seen))

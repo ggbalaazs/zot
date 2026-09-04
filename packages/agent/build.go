@@ -53,6 +53,10 @@ type Resolved struct {
 	// discovered. Exposed so the tui can list / preview skills.
 	SkillTool *skills.Tool
 
+	// SkillDiagnostics records non-fatal skill discovery failures and
+	// shadowing decisions so each host mode can report them appropriately.
+	SkillDiagnostics []string
+
 	// ContextFiles records the AGENTS.md files appended to SystemPrompt,
 	// in effective load order. Interactive mode uses this metadata to make
 	// otherwise invisible startup context inspectable without adding fake
@@ -590,9 +594,10 @@ func Resolve(args Args, requireCred bool) (Resolved, error) {
 	// system prompt, no `skill` tool in the registry. Useful for a
 	// clean-room run with zero extra context biasing the model.
 	var (
-		discovered    []*skills.Skill
-		skillTool     *skills.Tool
-		skillAddendum string
+		discovered       []*skills.Skill
+		skillTool        *skills.Tool
+		skillAddendum    string
+		skillDiagnostics []string
 	)
 	if !args.NoSkill {
 		homeDir, _ := os.UserHomeDir()
@@ -603,10 +608,17 @@ func Resolve(args Args, requireCred bool) (Resolved, error) {
 			}
 		}
 		if !args.NoExt || len(args.Exts) > 0 {
-			extSources, _ := extensions.PlanSkillSources(ZotHome(), args.CWD, args.Exts, !args.NoExt)
+			extSources, errs := extensions.PlanSkillSources(ZotHome(), args.CWD, args.Exts, !args.NoExt)
 			sources = append(extSources, sources...)
+			for _, err := range errs {
+				skillDiagnostics = append(skillDiagnostics, err.Error())
+			}
 		}
-		discovered, _ = skills.DiscoverSources(sources, true)
+		var errs []error
+		discovered, errs = skills.DiscoverSources(sources, true)
+		for _, err := range errs {
+			skillDiagnostics = append(skillDiagnostics, err.Error())
+		}
 		if len(discovered) > 0 {
 			skillTool = skills.NewTool(discovered)
 			reg[skillTool.Name()] = skillTool
@@ -678,6 +690,7 @@ func Resolve(args Args, requireCred bool) (Resolved, error) {
 		MaxOutput:        resolvedModel.MaxOutput,
 		Sandbox:          sandbox,
 		SkillTool:        skillTool,
+		SkillDiagnostics: skillDiagnostics,
 		ContextFiles:     contextFiles,
 		systemAppend:     append_,
 		systemCustom:     custom,
