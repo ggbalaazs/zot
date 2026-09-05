@@ -25,6 +25,16 @@ You'll see one JSON object per line on stdout: a response acknowledging the prom
 
 `zot rpc` accepts the same flags as the other modes: `--provider`, `--model`, `--cwd`, `--api-key`, `--base-url`, `--system-prompt`, `--append-system-prompt`, `--reasoning`, `--max-steps`, `--no-tools`, `--tools`, `--no-context-files`. Sessions are disabled by default in RPC mode; the embedding application owns persistence.
 
+## Extension system prompts
+
+Extensions can subscribe to `before_agent_start` to inspect and replace the
+complete system prompt before the first agent model call. This uses the
+extension subprocess protocol, not a new RPC client command. The result is
+reused for ordinary follow-up prompts and tool-loop steps; `clear` and a model
+change invalidate it for the next prompt. Failures keep the current prompt and
+surface as `ext_notify` warnings. See [System prompt replacement](extensions.md#system-prompt-replacement)
+for chaining, deadlines, size limits, and privacy considerations.
+
 ## Auth
 
 If the environment variable `ZOTCORE_RPC_TOKEN` is set on the spawned process, the first line on stdin **must** be a `hello` command containing the matching token:
@@ -134,6 +144,15 @@ Full transcript.
 ```
 
 Response data: `{"messages": [<message>, ...]}`. See **message shape** below.
+
+### Runtime mutations while busy
+
+`clear`, `set_model`, and `set_reasoning` require an idle agent. During prompt
+preparation (including extension hooks), model/tool execution, or compaction,
+they return `success:false` with an `agent is busy` error and leave state
+unchanged. They are not queued. Wait for the active operation to finish, or
+send `abort`, wait for completion, and retry. The RPC read loop stays responsive
+to `abort` while an operation is busy.
 
 ### `clear`
 

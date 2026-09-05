@@ -58,6 +58,7 @@ type SubscribeFromExt struct {
 }
 
 type EventInterceptResponseFromExt struct {
+	SystemPrompt json.RawMessage `json:"system_prompt,omitempty"`
 	Type         string          `json:"type"`
 	ID           string          `json:"id"`
 	Block        bool            `json:"block,omitempty"`
@@ -196,14 +197,20 @@ type EventFromHost struct {
 }
 
 type EventInterceptFromHost struct {
-	Type     string          `json:"type"`
-	ID       string          `json:"id"`
-	Event    string          `json:"event"`
-	ToolID   string          `json:"tool_id,omitempty"`
-	ToolName string          `json:"tool_name,omitempty"`
-	ToolArgs json.RawMessage `json:"tool_args,omitempty"`
-	Step     int             `json:"step,omitempty"`
-	Text     string          `json:"text,omitempty"`
+	SystemPrompt *string         `json:"system_prompt,omitempty"`
+	SessionID    string          `json:"session_id,omitempty"`
+	AgentRunID   string          `json:"agent_run_id,omitempty"`
+	CWD          string          `json:"cwd,omitempty"`
+	Provider     string          `json:"provider,omitempty"`
+	Model        string          `json:"model,omitempty"`
+	Type         string          `json:"type"`
+	ID           string          `json:"id"`
+	Event        string          `json:"event"`
+	ToolID       string          `json:"tool_id,omitempty"`
+	ToolName     string          `json:"tool_name,omitempty"`
+	ToolArgs     json.RawMessage `json:"tool_args,omitempty"`
+	Step         int             `json:"step,omitempty"`
+	Text         string          `json:"text,omitempty"`
 }
 
 type PanelKeyFromHost struct {

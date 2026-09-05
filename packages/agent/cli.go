@@ -326,6 +326,7 @@ func wireNonInteractiveAgentExtHooks(ctx context.Context, ag *core.Agent, extMgr
 	if ag == nil || extMgr == nil {
 		return
 	}
+	wireBeforeAgentStart(ag, extMgr, "")
 	ag.BeforeToolExecute = func(call provider.ToolCallBlock) (bool, string, json.RawMessage) {
 		res := extMgr.InterceptToolCall(ctx, call.ID, call.Name, call.Arguments)
 		if res.Block {
@@ -624,7 +625,7 @@ func refreshAgentToolsAndPrompt(args Args, sharedSandbox *tools.Sandbox, extTool
 		reg = mutateRegistry(reg)
 	}
 	ag.SetTools(reg)
-	ag.System = resolved.SystemPrompt
+	ag.SetSystem(resolved.SystemPrompt)
 }
 
 // reloadResourcesAfterStartupPre reloads extensions (if any) and
@@ -777,10 +778,9 @@ func runInteractive(ctx context.Context, args Args, version string) error {
 
 	// Capture current args in a closure so BuildAgent can re-resolve
 	// after a successful login (picks up the newly stored credential).
-	wireAgentExt := func(a *core.Agent) *core.Agent {
-		if a == nil {
-			return a
-		}
+	wireAgentExt := func(resolved Resolved) *core.Agent {
+		a := resolved.NewAgent()
+		wireBeforeAgentStart(a, extMgr, resolved.Provider)
 		a.BeforeToolExecute = func(call provider.ToolCallBlock) (bool, string, json.RawMessage) {
 			// Guards run before confirmation because they may rewrite the
 			// arguments. The user must approve the effective call that will
@@ -846,7 +846,7 @@ func runInteractive(ctx context.Context, args Args, version string) error {
 		resolved.UseSandbox(sharedSandbox)
 		resolved.MergeExtensionTools(extToolAdapter)
 		injectSwarmSpawn(resolved.ToolRegistry)
-		return wireAgentExt(resolved.NewAgent()), resolved.Provider, resolved.Model, nil
+		return wireAgentExt(resolved), resolved.Provider, resolved.Model, nil
 	}
 
 	// Rebuild agent with an explicit provider/model override.
@@ -865,7 +865,7 @@ func runInteractive(ctx context.Context, args Args, version string) error {
 		resolved.UseSandbox(sharedSandbox)
 		resolved.MergeExtensionTools(extToolAdapter)
 		injectSwarmSpawn(resolved.ToolRegistry)
-		return wireAgentExt(resolved.NewAgent()), resolved.Provider, resolved.Model, nil
+		return wireAgentExt(resolved), resolved.Provider, resolved.Model, nil
 	}
 
 	// Rebuild agent for the rescue picker after a recoverable failure.
@@ -892,12 +892,12 @@ func runInteractive(ctx context.Context, args Args, version string) error {
 		resolved.UseSandbox(sharedSandbox)
 		resolved.MergeExtensionTools(extToolAdapter)
 		injectSwarmSpawn(resolved.ToolRegistry)
-		return wireAgentExt(resolved.NewAgent()), resolved.Provider, resolved.Model, nil
+		return wireAgentExt(resolved), resolved.Provider, resolved.Model, nil
 	}
 
 	var ag *core.Agent
 	if r.HasCredential() {
-		ag = wireAgentExt(r.NewAgent())
+		ag = wireAgentExt(r)
 	}
 
 	// /reload-ext callback: after the manager has respawned every

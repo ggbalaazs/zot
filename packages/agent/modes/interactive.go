@@ -6632,8 +6632,8 @@ func truncateForSummary(s string, n int) string {
 // applyAutoSwarmSystemPrompt appends (active=true) or strips
 // (active=false) the auto-swarm system-prompt block on the running
 // agent so the model proactively considers swarm_spawn when the user
-// flips the toggle. The block lives at the tail of agent.System so
-// stripping is a plain suffix-trim; idempotent in both directions.
+// flips the toggle. Edit the base prompt so extension replacements are not
+// applied twice when the next turn prepares the rebuilt prompt.
 func (i *Interactive) applyAutoSwarmSystemPrompt(active bool) {
 	if i.agent == nil {
 		return
@@ -6642,16 +6642,16 @@ func (i *Interactive) applyAutoSwarmSystemPrompt(active bool) {
 	if addendum == "" {
 		return
 	}
-	sys := i.agent.System
+	sys := i.agent.BaseSystem()
 	has := strings.Contains(sys, addendum)
 	switch {
 	case active && !has:
 		if sys != "" && !strings.HasSuffix(sys, "\n\n") {
 			sys += "\n\n"
 		}
-		i.agent.System = sys + addendum
+		i.agent.SetSystem(sys + addendum)
 	case !active && has:
-		i.agent.System = strings.TrimRight(strings.ReplaceAll(sys, addendum, ""), "\n") + "\n"
+		i.agent.SetSystem(strings.TrimRight(strings.ReplaceAll(sys, addendum, ""), "\n") + "\n")
 	}
 }
 

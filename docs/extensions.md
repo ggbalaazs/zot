@@ -263,6 +263,8 @@ shown in the confirmation dialog.
 
 Interceptable events:
 
+- `before_agent_start`: inspect and replace the complete system prompt before
+  the first model call. See [System prompt replacement](#system-prompt-replacement).
 - `tool_call`: block the call (model sees `reason` as the tool
   error) or rewrite args via `modified_args`.
 - `turn_start`: block the turn before the model is called. Useful
@@ -272,6 +274,55 @@ Interceptable events:
   the user-visible text via `replace_text`. The model's original
   text stays in the transcript so the model sees what it actually
   said on subsequent turns.
+
+#### System prompt replacement
+
+Subscribe with `{"type":"subscribe","intercept":["before_agent_start"]}`.
+After prompt assembly (including context files, skills, and extension tools),
+zot sends a request before the first agent model call:
+
+```json
+{"type":"event_intercept","id":"start-1","event":"before_agent_start","session_id":"session-123","agent_run_id":"run-456","cwd":"/work/repo","provider":"anthropic","model":"claude-opus-4-7","system_prompt":"The complete current system prompt"}
+```
+
+Reply with an exact replacement:
+
+```json
+{"type":"event_intercept_response","id":"start-1","system_prompt":"The complete replacement system prompt"}
+```
+
+No trimming, merging, or appending is performed by the host. `""` intentionally
+removes the prompt; omission leaves it unchanged. `block` does not block startup.
+Extensions run serially in successful load order (explicit extensions first,
+then discovery); each receives the previous extension's result.
+
+The result remains stable across normal user messages, retries, and tool-loop
+steps. The event runs again after a model change, conversation clear, session
+change, or explicit prompt rebuild/reset (including interactive extension reload).
+Rebuilds start from the unmodified base prompt, not the last extension result.
+If a prompt rebuild/reset occurs while a hook is waiting, zot discards that
+preparation's result and runs the chain again against the current base prompt,
+even when the reset keeps the same text. The new pass has a new `agent_run_id`.
+Cancellation stops preparation without committing a pending replacement.
+`session_start` remains a separate one-way setup notification.
+
+`session_id` is the persisted conversation ID when available, otherwise a
+runtime-local ID. `agent_run_id` identifies one preparation pass and changes
+on each rebuild. It is shared by all extensions in that pass.
+
+Each extension has a five-second deadline including the request pipe write.
+Invalid/non-string values, malformed responses, crashes, and timeouts preserve
+the current prompt and produce an extension log diagnostic and host warning.
+An omitted value is a normal no-op. The encoded `system_prompt` response value
+is limited to 1 MiB; complete transport frames are limited to 4 MiB. Exceeding
+the frame limit disconnects the extension's read loop. A blocked request write
+closes its input pipe to release the writer. Other subscribed extensions still
+run unless the user cancels startup.
+
+Supported in interactive, print, JSON, and RPC modes. RPC warnings use
+`ext_notify`. Subscribed extensions see the entire prompt, including private
+context-file instructions. This feature is not a security boundary and does
+not change tool permissions or validate the safety of replacement instructions.
 
 #### `event_intercept_response`
 
@@ -284,12 +335,14 @@ Reply to an `event_intercept` from the host. All fields default to
 | `reason` | refusal text (on block) or pass-through note. |
 | `modified_args` | for `tool_call`: rewritten JSON args the tool will actually see. Must be a valid JSON object. Ignored when `block` is true. |
 | `replace_text` | for `assistant_message`: replaces the user-visible text. The model's original output still lives in the transcript. Ignored when `block` is true. |
+| `system_prompt` | for `before_agent_start`: exact string replacement, including an empty string. Omission keeps the current prompt. |
 
-Missing the response within 5s is treated as "allow" (i.e. an
-unresponsive extension never stalls the agent). When multiple
+Missing the response within 5s is treated as "allow, unchanged". For
+`before_agent_start`, this deadline also includes the request write; legacy
+interceptors start the timeout after writing the request. When multiple
 extensions subscribe to the same event, they're consulted serially;
-the first `block` wins and rewrites (args / text) chain: each
-subsequent interceptor sees the previous one's output.
+the first `block` wins for the blocking events and rewrites (args / text)
+chain. `before_agent_start` follows the non-blocking replacement rules above.
 
 ```json
 {"type":"event_intercept_response","id":"...",
@@ -602,10 +655,17 @@ host metadata such as `HostInfo.CWD`, `Provider`, `Model`, `ZotVersion`,
 `ExtensionDir`, or `DataDir`. The SDK sends `hello`, waits for
 `hello_ack`, runs `OnHello`, announces registrations, then sends `ready`.
 
-The SDK has four interceptor hooks, all optional:
+The SDK has five interceptor hooks, all optional:
 
 ```go
 // e is the *ext.Extension returned by ext.New(...).
+
+// Replace the complete prompt once per session or explicit rebuild.
+// Return nil to keep it, or a pointer to "" to remove it entirely.
+e.InterceptBeforeAgentStart(func(event ext.BeforeAgentStartEvent) *string {
+    prompt := event.SystemPrompt + "\nUse the project's preferred coding style."
+    return &prompt
+})
 
 // Refuse calls or rewrite args before they run.
 e.InterceptToolCall(func(tool string, args json.RawMessage) (bool, string) {

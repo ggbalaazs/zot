@@ -52,6 +52,8 @@ func (m *Manager) EmitEvent(ev extproto.EventFromHost) {
 // optional rewrite fields (ModifiedArgs for tool_call, ReplaceText
 // for assistant_message) to carry the rewrite into the action.
 type InterceptResult struct {
+	SystemPrompt json.RawMessage
+	failure      string
 	Block        bool
 	Reason       string
 	ModifiedArgs json.RawMessage
@@ -162,7 +164,8 @@ func (m *Manager) interceptSubsFor(event string) []*Extension {
 
 // askIntercept sends one EventInterceptFromHost to ext and waits for
 // the reply, a timeout, or context cancellation. Returns a typed
-// result. Never blocks for longer than interceptTimeout.
+// result. before_agent_start callers bound the complete operation with a
+// context deadline; other events retain the legacy response-only timeout.
 func (m *Manager) askIntercept(ctx context.Context, ext *Extension, payload extproto.EventInterceptFromHost) InterceptResult {
 	id := newCorrelationID()
 	ch := make(chan extproto.EventInterceptResponseFromExt, 1)
@@ -179,17 +182,33 @@ func (m *Manager) askIntercept(ctx context.Context, ext *Extension, payload extp
 		ext.mu.Unlock()
 		return InterceptResult{}
 	}
-	if _, err := ext.stdin.Write(frame); err != nil {
+	var writeErr error
+	if payload.Event == "before_agent_start" {
+		// Bound pipe writes too. Closing the pipe releases a blocked writer.
+		done := make(chan error, 1)
+		go func() { _, err := ext.stdin.Write(frame); done <- err }()
+		select {
+		case writeErr = <-done:
+		case <-ctx.Done():
+			_ = ext.stdin.Close()
+			<-done
+			writeErr = ctx.Err()
+		}
+	} else {
+		_, writeErr = ext.stdin.Write(frame)
+	}
+	if err := writeErr; err != nil {
 		ext.mu.Lock()
 		delete(ext.pendingIntercept, id)
 		ext.mu.Unlock()
 		fmt.Fprintf(ext.logFile, "[zot] intercept write failed: %v\n", err)
-		return InterceptResult{}
+		return InterceptResult{failure: "request write failed"}
 	}
 
 	select {
 	case resp := <-ch:
 		return InterceptResult{
+			SystemPrompt: resp.SystemPrompt,
 			Block:        resp.Block,
 			Reason:       resp.Reason,
 			ModifiedArgs: resp.ModifiedArgs,
@@ -200,12 +219,12 @@ func (m *Manager) askIntercept(ctx context.Context, ext *Extension, payload extp
 		delete(ext.pendingIntercept, id)
 		ext.mu.Unlock()
 		fmt.Fprintf(ext.logFile, "[zot] intercept %s timed out; allowing\n", payload.Event)
-		return InterceptResult{}
+		return InterceptResult{failure: "response timed out"}
 	case <-ctx.Done():
 		ext.mu.Lock()
 		delete(ext.pendingIntercept, id)
 		ext.mu.Unlock()
-		return InterceptResult{}
+		return InterceptResult{failure: "response canceled or timed out"}
 	}
 }
 

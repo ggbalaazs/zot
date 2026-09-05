@@ -48,6 +48,11 @@ type Agent struct {
 	// malformed modifiedArgs is ignored.
 	BeforeToolExecute func(call provider.ToolCallBlock) (allowed bool, reason string, modifiedArgs json.RawMessage)
 
+	// BeforeStart replaces the complete system prompt once per runtime session
+	// or explicit prompt/model reset, before any turn starts. It is not called
+	// for ordinary follow-up messages or tool-loop steps.
+	BeforeStart func(context.Context, string) string
+
 	// BeforeTurn, if set, is called before each turn's model call.
 	// Returning (allowed=false, reason) aborts the turn; reason is
 	// surfaced as an assistant-like status line. Used for rate-
@@ -97,6 +102,12 @@ type Agent struct {
 	// the session log; per-message append hooks do not fire for this
 	// wholesale transcript replacement.
 	OnTranscriptCompacted func(messages []provider.Message)
+
+	// Preparation caches the effective prompt separately from its unmodified
+	// base so a model or session reset cannot stack extension appendices.
+	startPrepared                                    bool
+	startGeneration                                  uint64
+	startBase, startSystem, startModel, startSession string
 
 	mu       sync.Mutex
 	messages []provider.Message
@@ -254,6 +265,9 @@ func (a *Agent) SetMessages(msgs []provider.Message) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.messages = append(a.messages[:0], msgs...)
+	if len(msgs) == 0 {
+		a.resetStartLocked()
+	}
 	a.rev++
 }
 
@@ -371,6 +385,12 @@ func (a *Agent) wrapSink(sink func(AgentEvent)) func(AgentEvent) {
 
 func (a *Agent) runLoop(ctx context.Context, sink func(AgentEvent)) error {
 	for step := 1; a.MaxSteps <= 0 || step <= a.MaxSteps; step++ {
+		// Preparation is cached across steps and user messages. Only an
+		// explicit prompt/model/session change invokes BeforeStart again.
+		if err := a.prepareStart(ctx); err != nil {
+			sink(EvDone{})
+			return err
+		}
 		// Messages queued while the agent was busy are delivered
 		// before the next model call. This is the safe boundary:
 		// any previous tool batch has already completed and its
@@ -563,24 +583,40 @@ func (a *Agent) dropLastAssistantMessage() {
 // oneTurn calls the LLM once, forwards events, returns the stop reason
 // and the assembled assistant message (already appended to the transcript).
 func (a *Agent) oneTurn(ctx context.Context, sink func(AgentEvent)) (provider.StopReason, provider.Message, error) {
-	req := provider.Request{
-		Model:  a.Model,
-		System: a.System,
-		// Repair any dangling tool_use blocks before sending. A turn
-		// aborted mid-flight (cancel, connection drop, ECONNREFUSED to a
-		// dev server, etc.) can leave an assistant tool_use with no
-		// matching tool_result in the live transcript. The load-time
-		// repair in OpenSession only runs on restart, so without this the
-		// next in-process request is rejected by providers like Anthropic
-		// with "tool_use ids were found without tool_result blocks". The
-		// repair is pure and a no-op on already-valid transcripts.
-		Messages:     repairToolUseResultPairs(a.Messages()),
-		Tools:        a.Tools.Specs(),
-		Reasoning:    a.Reasoning,
-		MaxTokens:    a.MaxTokens,
-		Temperature:  a.Temperature,
-		SessionID:    a.SessionID,
-		MaxToolCalls: a.MaxToolCalls,
+	var req provider.Request
+	for {
+		if err := a.prepareStart(ctx); err != nil {
+			return provider.StopError, provider.Message{}, err
+		}
+		a.mu.Lock()
+		// A reset can also arrive after runLoop's preparation, for example
+		// while BeforeTurn waits. Validate and snapshot under the same lock
+		// so this request never receives an unprepared replacement prompt.
+		if a.BeforeStart != nil && !a.startCurrentLocked() {
+			a.mu.Unlock()
+			continue
+		}
+		req = provider.Request{
+			Model:  a.Model,
+			System: a.System,
+			// Repair any dangling tool_use blocks before sending. A turn
+			// aborted mid-flight (cancel, connection drop, ECONNREFUSED to a
+			// dev server, etc.) can leave an assistant tool_use with no
+			// matching tool_result in the live transcript. The load-time
+			// repair in OpenSession only runs on restart, so without this the
+			// next in-process request is rejected by providers like Anthropic
+			// with "tool_use ids were found without tool_result blocks". The
+			// repair is pure and a no-op on already-valid transcripts.
+			Messages:     repairToolUseResultPairs(append([]provider.Message(nil), a.messages...)),
+			Tools:        a.Tools.Specs(),
+			Reasoning:    a.Reasoning,
+			MaxTokens:    a.MaxTokens,
+			Temperature:  a.Temperature,
+			SessionID:    a.SessionID,
+			MaxToolCalls: a.MaxToolCalls,
+		}
+		a.mu.Unlock()
+		break
 	}
 	stream, err := a.Client.Stream(ctx, req)
 	if err != nil {

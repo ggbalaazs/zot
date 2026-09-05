@@ -117,6 +117,20 @@ type ToolCallDecision struct {
 // when you want to rewrite args instead of only blocking.
 type ToolCallHandler func(toolName string, args json.RawMessage) ToolCallDecision
 
+// BeforeAgentStartEvent contains the complete prompt and effective runtime context.
+type BeforeAgentStartEvent struct {
+	SystemPrompt string
+	SessionID    string
+	AgentRunID   string
+	CWD          string
+	Provider     string
+	Model        string
+}
+
+// BeforeAgentStartHandler returns an exact replacement, or nil to keep the prompt.
+// A pointer to an empty string intentionally removes the system prompt.
+type BeforeAgentStartHandler func(BeforeAgentStartEvent) *string
+
 // TurnStartDecision controls whether the next model call runs. Zero
 // value means "allow".
 type TurnStartDecision struct {
@@ -261,6 +275,7 @@ type Extension struct {
 	interceptTool      InterceptHandler
 	interceptToolRich  ToolCallHandler
 	interceptOn        bool
+	interceptStart     BeforeAgentStartHandler
 	interceptTurn      TurnStartHandler
 	interceptAssistant AssistantMessageHandler
 	panelKeys          map[string]func(key, text string)
@@ -450,6 +465,13 @@ func (e *Extension) InterceptToolCallX(fn ToolCallHandler) {
 	e.mu.Unlock()
 }
 
+// InterceptBeforeAgentStart registers a session-scoped prompt replacement hook.
+func (e *Extension) InterceptBeforeAgentStart(fn BeforeAgentStartHandler) {
+	e.mu.Lock()
+	e.interceptStart = fn
+	e.mu.Unlock()
+}
+
 // InterceptTurnStart registers a guard that runs before every turn's
 // model call. Return Block=true with Reason to abort the turn.
 // Useful for deny-by-default gates and usage quotas.
@@ -529,6 +551,7 @@ func (e *Extension) Run() error {
 	descs := append([]descTuple(nil), e.descriptions...)
 	toolDefs := append([]toolDef(nil), e.toolDefs...)
 	eventNames := append([]string(nil), e.eventNames...)
+	interceptStart := e.interceptStart != nil
 	interceptTool := e.interceptOn
 	interceptTurn := e.interceptTurn != nil
 	interceptAsst := e.interceptAssistant != nil
@@ -550,6 +573,9 @@ func (e *Extension) Run() error {
 		})
 	}
 	var intercepts []string
+	if interceptStart {
+		intercepts = append(intercepts, "before_agent_start")
+	}
 	if interceptTool {
 		intercepts = append(intercepts, "tool_call")
 	}
@@ -762,6 +788,18 @@ func (e *Extension) dispatchIntercept(ei extproto.EventInterceptFromHost) {
 	}
 
 	switch ei.Event {
+	case "before_agent_start":
+		e.mu.Lock()
+		fn := e.interceptStart
+		e.mu.Unlock()
+		if fn != nil && ei.SystemPrompt != nil {
+			if replacement := fn(BeforeAgentStartEvent{
+				SystemPrompt: *ei.SystemPrompt, SessionID: ei.SessionID, AgentRunID: ei.AgentRunID,
+				CWD: ei.CWD, Provider: ei.Provider, Model: ei.Model,
+			}); replacement != nil {
+				resp.SystemPrompt, _ = json.Marshal(*replacement)
+			}
+		}
 	case "tool_call":
 		e.mu.Lock()
 		rich := e.interceptToolRich

@@ -68,25 +68,7 @@ func runRPCMode(ctx context.Context, args Args, version string) error {
 	r.MergeExtensionTools(&extToolAdapter{mgr: extMgr})
 
 	ag := r.NewAgent()
-	ag.BeforeToolExecute = func(call provider.ToolCallBlock) (bool, string, json.RawMessage) {
-		r := extMgr.InterceptToolCall(ctx, call.ID, call.Name, call.Arguments)
-		if r.Block {
-			return false, r.Reason, nil
-		}
-		return true, "", r.ModifiedArgs
-	}
-	ag.BeforeTurn = func(step int) (bool, string) {
-		r := extMgr.InterceptTurnStart(ctx, step)
-		return !r.Block, r.Reason
-	}
-	ag.BeforeAssistantMessage = func(text string) (bool, string, string) {
-		r := extMgr.InterceptAssistantMessage(ctx, text)
-		if r.Block {
-			return false, r.Reason, ""
-		}
-		return true, "", r.ReplaceText
-	}
-	ag.OnEvent = func(ev core.AgentEvent) { fanoutAgentEvent(extMgr, ev) }
+	wireNonInteractiveAgentExtHooks(ctx, ag, extMgr)
 
 	// /reload-ext hot-reload callback (also triggered via rpc
 	// `reload_ext` if/when added). Rebuilds the tool registry on the
@@ -236,6 +218,18 @@ func (s *rpcServer) run(in io.Reader) error {
 // dispatch routes a command. Long-running commands (prompt, compact)
 // run on their own goroutine so the read loop stays responsive.
 func (s *rpcServer) dispatch(cmd, id string, raw []byte) {
+	// Runtime mutations must not race with prompt preparation, model/tool
+	// execution, or compaction. Do not wait here: this is also the read loop
+	// that must keep accepting abort while an extension or provider is busy.
+	switch cmd {
+	case "clear", "set_model", "set_reasoning":
+		if !s.turnMu.TryLock() {
+			s.writeError(id, cmd, "agent is busy; wait for completion or abort before retrying")
+			return
+		}
+		defer s.turnMu.Unlock()
+	}
+
 	switch cmd {
 	case "hello":
 		s.writeResponse(id, cmd, map[string]any{

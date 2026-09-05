@@ -148,8 +148,9 @@ type Manager struct {
 	model      string
 	hooks      HostHooks
 
-	mu  sync.RWMutex
-	ext map[string]*Extension // keyed by manifest name
+	mu       sync.RWMutex
+	ext      map[string]*Extension // keyed by manifest name
+	extOrder []*Extension          // successful load order
 
 	// commandIndex maps a lower-cased slash-command name (without the
 	// leading /) to its canonical registration. First-come-first-served:
@@ -429,6 +430,7 @@ func (m *Manager) loadOne(ctx context.Context, dir string) error {
 
 	m.mu.Lock()
 	m.ext[mf.Name] = ext
+	m.extOrder = append(m.extOrder, ext)
 	// Note: ext.commands and ext.tools may be empty here — they're
 	// populated by the read loop as register_* frames arrive after
 	// hello. Indexing happens in the read loop too. Discover()'s
@@ -551,6 +553,7 @@ func (m *Manager) Reload(ctx context.Context, grace time.Duration) ReloadStats {
 	explicit := append([]string(nil), m.explicitPaths...)
 	stats.Stopped = len(old)
 	m.ext = map[string]*Extension{}
+	m.extOrder = nil
 	m.commandIndex = map[string]commandRegistration{}
 	m.toolIndex = map[string]*Extension{}
 	m.explicitPaths = nil
@@ -931,7 +934,7 @@ func (m *Manager) readLoop(ext *Extension, scanner *bufio.Scanner) {
 				}
 				for _, ev := range sub.Intercept {
 					switch ev {
-					case "tool_call", "turn_start", "assistant_message":
+					case "tool_call", "turn_start", "assistant_message", "before_agent_start":
 						ext.interceptSubs[ev] = struct{}{}
 					}
 				}
