@@ -13,7 +13,11 @@ func TestGPT6AstraCatalog(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if m.API != APIResponses || m.ContextWindow != 1050000 || m.MaxOutput != 128000 || !m.Reasoning || m.Speculative {
+			wantContext := 1050000
+			if name == "openai-codex" {
+				wantContext = 272000
+			}
+			if m.API != APIResponses || m.ContextWindow != wantContext || m.MaxOutput != 128000 || !m.Reasoning || m.Speculative {
 				t.Fatalf("unexpected model capabilities: %+v", m)
 			}
 			if m.PriceInput != 10 || m.PriceOutput != 50 || m.PriceCacheRead != 1 || m.PriceCacheWrite != 12.5 {

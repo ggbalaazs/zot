@@ -432,7 +432,7 @@ var Catalog = []Model{
 	},
 	{
 		Provider: "openai-codex", ID: "gpt-6-astra", DisplayName: "GPT-6 Astra", API: APIResponses,
-		ContextWindow: 1050000, MaxOutput: 128000, Reasoning: true,
+		ContextWindow: 272000, MaxOutput: 128000, Reasoning: true,
 		PriceInput: 10, PriceOutput: 50, PriceCacheRead: 1, PriceCacheWrite: 12.5,
 		PriceTierInputTokens: 272000,
 		PriceInputAbove:      20, PriceOutputAbove: 75, PriceCacheReadAbove: 2, PriceCacheWriteAbove: 25,
