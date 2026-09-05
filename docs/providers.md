@@ -90,6 +90,23 @@ These providers support subscription login:
 OAuth tokens are stored in `$ZOT_HOME/auth.json` and refreshed when refresh is
 available.
 
+## GPT-6 Astra
+
+Select `gpt-6-astra` with provider `openai`, `openai-responses`,
+`openai-codex`, or `github-copilot`, for example:
+
+```bash
+zot --provider github-copilot --model gpt-6-astra
+```
+
+Astra uses the Responses API and supports `low`, `medium`, `high`, `xhigh`,
+and `max` reasoning. The catalog includes its 1,050,000-token context window,
+128,000-token output limit, and standard token prices, including the higher
+rates for prompts above 272,000 tokens. Subscription access depends on your
+plan, rollout, and organization policy; catalog availability does not grant access.
+See the [OpenAI model specifications](https://developers.openai.com/api/docs/models/gpt-6-astra)
+and [GitHub Copilot availability](https://github.blog/changelog/2026-09-04-gpt-6-astra-is-generally-available-in-github-copilot/).
+
 ## API-key providers
 
 These providers can use environment variables. Simple API-key providers can

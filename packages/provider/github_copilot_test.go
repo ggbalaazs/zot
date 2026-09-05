@@ -69,7 +69,7 @@ func TestCopilotHostRewrite(t *testing.T) {
 	}
 }
 
-func TestCopilotRoutesGPT56ToResponses(t *testing.T) {
+func TestCopilotRoutesModernGPTToResponses(t *testing.T) {
 	router, ok := NewGithubCopilotClient("pat").(*modelRouter)
 	if !ok {
 		t.Fatal("NewGithubCopilotClient did not return a modelRouter")
@@ -86,7 +86,7 @@ func TestCopilotRoutesGPT56ToResponses(t *testing.T) {
 	if codex.baseURL != want {
 		t.Errorf("github-copilot Responses baseURL = %q, want %q", codex.baseURL, want)
 	}
-	for _, id := range []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"} {
+	for _, id := range []string{"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra"} {
 		m, err := FindModel("github-copilot", id)
 		if err != nil {
 			t.Fatalf("FindModel(%q): %v", id, err)

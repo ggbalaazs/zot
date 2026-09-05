@@ -203,9 +203,8 @@ const copilotDefaultBaseURL = "https://api.individual.githubcopilot.com"
 // The pat must be a GitHub Personal Access Token with Copilot access.
 //
 // Copilot exposes two wire protocols: most models use Chat Completions
-// (/chat/completions), but the newer GPT-5.6 family (sol/terra/luna) is
-// only served through the Responses API (/responses) and returns an
-// "chat/completions is not available for gpt models" error otherwise.
+// (/chat/completions), while newer GPT models use the Responses API
+// (/responses), including GPT-5.6 (sol/terra/luna) and GPT-6 Astra.
 // A model router dispatches each request to the matching wire client
 // based on the model's catalog API tag.
 func NewGithubCopilotClient(pat string) Client {
