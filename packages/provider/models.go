@@ -376,6 +376,15 @@ var Catalog = []Model{
 		Speculative: true,
 	},
 
+	// ---- OpenAI / GPT-6 ----
+	{
+		Provider: "openai", ID: "gpt-6-astra", DisplayName: "GPT-6 Astra", API: APIResponses,
+		ContextWindow: 1050000, MaxOutput: 128000, Reasoning: true,
+		PriceInput: 10, PriceOutput: 50, PriceCacheRead: 1, PriceCacheWrite: 12.5,
+		PriceTierInputTokens: 272000,
+		PriceInputAbove:      20, PriceOutputAbove: 75, PriceCacheReadAbove: 2, PriceCacheWriteAbove: 25,
+	},
+
 	// ---- OpenAI Codex / ChatGPT subscription backend ----
 	// Same model ids as the OpenAI family, but routed through the
 	// ChatGPT Codex OAuth backend rather than api.openai.com.
@@ -420,6 +429,13 @@ var Catalog = []Model{
 		ContextWindow: 272000, MaxOutput: 128000, Reasoning: true,
 		PriceInput: 2.5, PriceOutput: 15, PriceCacheRead: 0.25, PriceCacheWrite: 3.125,
 		Speculative: true,
+	},
+	{
+		Provider: "openai-codex", ID: "gpt-6-astra", DisplayName: "GPT-6 Astra", API: APIResponses,
+		ContextWindow: 272000, MaxOutput: 128000, Reasoning: true,
+		PriceInput: 10, PriceOutput: 50, PriceCacheRead: 1, PriceCacheWrite: 12.5,
+		PriceTierInputTokens: 272000,
+		PriceInputAbove:      20, PriceOutputAbove: 75, PriceCacheReadAbove: 2, PriceCacheWriteAbove: 25,
 	},
 }
 
