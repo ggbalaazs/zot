@@ -95,6 +95,11 @@ type Config struct {
 	// default; nil/missing means disabled. Toggle from /settings.
 	CompactMode *bool `json:"compact_mode,omitempty"`
 
+	// CollapseToolCall shows only the tool-call header, hiding
+	// call and result content. Off by default; nil/missing means disabled.
+	// Toggle from /settings.
+	CollapseToolCall *bool `json:"collapse_tool_call,omitempty"`
+
 	// ShowInstructionsAtStartup lists loaded context files, extensions,
 	// and user-installed skills above the transcript. Off by default;
 	// nil/missing means disabled. Toggle from /settings.

@@ -158,6 +158,10 @@ type View struct {
 	// the current spacious rendering.
 	CompactMode bool
 
+	// CollapseToolCall shows only each tool-call header, hiding
+	// both call previews and result content.
+	CollapseToolCall bool
+
 	// ExpandAll forces every long tool result to render in full.
 	// Toggled from the tui by ctrl+o. When false, results longer than
 	// ToolCollapseLines collapse to ToolCollapsePreview lines plus a
@@ -790,6 +794,11 @@ func (v *View) renderMessage(m provider.Message, width int, turnOpen bool) []str
 				// from the matching ToolCallBlock so multiple calls
 				// in one assistant message render as N adjacent boxes
 				// instead of stacking unclosed top edges.
+				if v.CollapseToolCall && !v.ExpandAll {
+					body := v.renderToolResultContent(tr.Content, width, color, path, startLine)
+					lines = append(lines, collapsedToolBoxWithBody(v.Theme, label, body, width, v.CompactMode)...)
+					continue
+				}
 				if v.FlatTools || v.CompactMode {
 					if v.CompactMode {
 						lines = append(lines, compactToolBlank(v.Theme, width))
@@ -857,6 +866,21 @@ func (v *View) renderToolCall(tc ToolCallView, width int) []string {
 		arg = tc.LivePath
 	}
 	label := tc.Name + " " + arg
+
+	if v.CollapseToolCall && !v.ExpandAll {
+		bodyText := tc.Result
+		if bodyText == "" {
+			bodyText = tc.Preview
+		}
+		var body []string
+		if bodyText != "" {
+			body = v.renderLiveToolResult(bodyText, flatToolBodyRenderWidth(width), v.Theme.ToolOut, tc.LivePath)
+		} else {
+			body = v.renderLiveToolBody(tc, width)
+		}
+		body = v.collapseToolBody(body, false)
+		return collapsedToolBoxWithBody(v.Theme, label, body, width, v.CompactMode)
+	}
 
 	// No leading blank: Build()'s inter-message separator already
 	// places one blank row between the previous transcript content
@@ -1105,6 +1129,31 @@ const toolBoxInnerPad = 1
 // the conversation reads as one column instead of having tool boxes
 // running edge-to-edge while user/assistant rows sit indented.
 const toolBoxOuterMargin = 2
+
+// collapsedToolBoxWithBody renders a tool frame with at most the final
+// meaningful preview line, preserving the normal spacing and borders.
+func collapsedToolBoxWithBody(th Theme, label string, body []string, width int, compact bool) []string {
+	last := ""
+	for i := len(body) - 1; i >= 0; i-- {
+		if _, line := parseImageFootprint(body[i]); visibleWidth(strings.TrimSpace(line)) > 0 {
+			last = line
+			break
+		}
+	}
+	if compact {
+		out := []string{compactToolBlank(th, width), toolHeaderLine(th, label, width, true)}
+		if last != "" {
+			out = append(out, compactToolBlank(th, width), toolBodyLine(th, last, width, true))
+		}
+		return append(out, compactToolBlank(th, width))
+	}
+	out := []string{toolBoxTop(th, label, width), toolBoxSide(th, "", width)}
+	if last != "" {
+		out = append(out, toolBoxSide(th, last, width))
+	}
+	out = append(out, toolBoxSide(th, "", width), toolBoxBottom(th, width))
+	return out
+}
 
 // toolBoxTop renders the labelled top edge of a tool block:
 //
