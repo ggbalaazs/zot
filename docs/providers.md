@@ -100,9 +100,9 @@ zot --provider github-copilot --model gpt-6-astra
 ```
 
 Astra uses the Responses API and supports `low`, `medium`, `high`, `xhigh`,
-and `max` reasoning. Public API and Copilot catalog entries include its
-1,050,000-token context window; the OpenAI Codex subscription entry uses the
-backend's 272,000-token default. All entries include the 128,000-token output
+and `max` reasoning. OpenAI API-key and Codex subscription entries use the
+272,000-token short-context tier by default; the Copilot entry uses a
+1,050,000-token context window. All entries include the 128,000-token output
 limit and standard token prices, including the higher rates for prompts above
 272,000 tokens. Subscription access depends on your
 plan, rollout, and organization policy; catalog availability does not grant access.

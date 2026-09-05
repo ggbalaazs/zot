@@ -13,9 +13,9 @@ func TestGPT6AstraCatalog(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			wantContext := 1050000
-			if name == "openai-codex" {
-				wantContext = 272000
+			wantContext := 272000
+			if name == "github-copilot" {
+				wantContext = 1050000
 			}
 			if m.API != APIResponses || m.ContextWindow != wantContext || m.MaxOutput != 128000 || !m.Reasoning || m.Speculative {
 				t.Fatalf("unexpected model capabilities: %+v", m)
