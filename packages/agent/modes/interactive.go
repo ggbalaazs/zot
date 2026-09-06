@@ -111,8 +111,8 @@ type InteractiveConfig struct {
 	// When true, it enables both flat tool calls and compact user turns.
 	CompactMode *bool
 
-	// CollapseToolCall hides call and result content while
-	// retaining each tool-call header.
+	// CollapseToolCall retains each tool-call header, a final preview line,
+	// and failure status while hiding the rest of the body.
 	CollapseToolCall *bool
 
 	// TUIInputStyle controls the main input rendering: plain or lines.
@@ -3567,7 +3567,7 @@ func (i *Interactive) openSettingsDialog() {
 		{
 			key:   "collapse_tool_call",
 			label: "collapse tool call rendering",
-			desc:  "show only the tool-call header, hiding call arguments and result content",
+			desc:  "retain tool headers, a final preview line, and failure status; ctrl+o expands the full output",
 			value: collapseToolCall,
 		},
 		{

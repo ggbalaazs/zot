@@ -158,8 +158,8 @@ type View struct {
 	// the current spacious rendering.
 	CompactMode bool
 
-	// CollapseToolCall shows only each tool-call header, hiding
-	// both call previews and result content.
+	// CollapseToolCall retains each tool-call header, the final rendered
+	// preview line, and an explicit error indicator for failed calls.
 	CollapseToolCall bool
 
 	// ExpandAll forces every long tool result to render in full.
@@ -796,7 +796,7 @@ func (v *View) renderMessage(m provider.Message, width int, turnOpen bool) []str
 				// instead of stacking unclosed top edges.
 				if v.CollapseToolCall && !v.ExpandAll {
 					body := v.renderToolResultContent(tr.Content, width, color, path, startLine)
-					lines = append(lines, collapsedToolBoxWithBody(v.Theme, label, body, width, v.CompactMode)...)
+					lines = append(lines, v.renderCollapsedTool(label, body, width, tr.IsError)...)
 					continue
 				}
 				if v.FlatTools || v.CompactMode {
@@ -874,12 +874,20 @@ func (v *View) renderToolCall(tc ToolCallView, width int) []string {
 		}
 		var body []string
 		if bodyText != "" {
-			body = v.renderLiveToolResult(bodyText, flatToolBodyRenderWidth(width), v.Theme.ToolOut, tc.LivePath)
+			color := v.Theme.ToolOut
+			if tc.Error {
+				color = v.Theme.Error
+			}
+			bodyWidth := toolBoxBodyRenderWidth(width)
+			if v.FlatTools || v.CompactMode {
+				bodyWidth = flatToolBodyRenderWidth(width)
+			}
+			body = v.renderLiveToolResult(bodyText, bodyWidth, color, tc.LivePath)
 		} else {
-			body = v.renderLiveToolBody(tc, width)
+			body = v.renderLiveToolContent(tc, width)
 		}
 		body = v.collapseToolBody(body, false)
-		return collapsedToolBoxWithBody(v.Theme, label, body, width, v.CompactMode)
+		return v.renderCollapsedTool(label, body, width, tc.Error)
 	}
 
 	// No leading blank: Build()'s inter-message separator already
@@ -1019,13 +1027,19 @@ func (v *View) renderLiveToolResult(text string, width, color int, sourcePath st
 //
 // Anything else returns nil and only the tool-call header shows.
 func (v *View) renderLiveToolBody(tc ToolCallView, width int) []string {
+	return v.wrapLiveBody(v.renderLiveToolContent(tc, width), width)
+}
+
+// renderLiveToolContent returns unframed preview rows so collapsed calls
+// can select their preview before applying borders or background padding.
+func (v *View) renderLiveToolContent(tc ToolCallView, width int) []string {
 	switch tc.Name {
 	case "write", "Write":
 		partial, ok, _ := ExtractPartialStringField(tc.RawJSONBuf, "content")
 		if !ok || partial == "" {
 			return nil
 		}
-		return v.wrapLiveBody(v.renderRawFile(partial, tc.LivePath, 1), width)
+		return v.renderRawFile(partial, tc.LivePath, 1)
 	case "edit", "Edit":
 		partial, ok, _, idx := ExtractLastNewText(tc.RawJSONBuf)
 		if !ok || partial == "" {
@@ -1036,13 +1050,13 @@ func (v *View) renderLiveToolBody(tc ToolCallView, width int) []string {
 		hint := fmt.Sprintf("edit %d (streaming)", idx)
 		body := []string{"    " + v.Theme.FG256(v.Theme.Muted, hint), ""}
 		body = append(body, v.renderRawFile(partial, tc.LivePath, 1)...)
-		return v.wrapLiveBody(body, width)
+		return body
 	case "bash", "Bash":
 		command, ok, _ := ExtractPartialStringField(tc.RawJSONBuf, "command")
 		if !ok || strings.TrimSpace(command) == "" {
 			return nil
 		}
-		return v.wrapLiveBody(v.renderLiveBashCommand(command, width), width)
+		return v.renderLiveBashCommand(command, width)
 	}
 	return nil
 }
@@ -1130,9 +1144,10 @@ const toolBoxInnerPad = 1
 // running edge-to-edge while user/assistant rows sit indented.
 const toolBoxOuterMargin = 2
 
-// collapsedToolBoxWithBody renders a tool frame with at most the final
-// meaningful preview line, preserving the normal spacing and borders.
-func collapsedToolBoxWithBody(th Theme, label string, body []string, width int, compact bool) []string {
+// renderCollapsedTool retains the final meaningful preview row and failure
+// status, applying the configured layout once to unframed body content.
+func (v *View) renderCollapsedTool(label string, body []string, width int, isError bool) []string {
+	th := v.Theme
 	last := ""
 	for i := len(body) - 1; i >= 0; i-- {
 		if _, line := parseImageFootprint(body[i]); visibleWidth(strings.TrimSpace(line)) > 0 {
@@ -1140,16 +1155,33 @@ func collapsedToolBoxWithBody(th Theme, label string, body []string, width int, 
 			break
 		}
 	}
-	if compact {
-		out := []string{compactToolBlank(th, width), toolHeaderLine(th, label, width, true)}
-		if last != "" {
-			out = append(out, compactToolBlank(th, width), toolBodyLine(th, last, width, true))
+	var preview []string
+	if isError {
+		preview = append(preview, th.FG256(th.Error, "  error"))
+	}
+	if last != "" {
+		preview = append(preview, last)
+	}
+	if v.FlatTools || v.CompactMode {
+		var out []string
+		if v.CompactMode {
+			out = append(out, compactToolBlank(th, width))
 		}
-		return append(out, compactToolBlank(th, width))
+		out = append(out, toolHeaderLine(th, label, width, v.CompactMode))
+		if v.CompactMode && len(preview) > 0 {
+			out = append(out, compactToolBlank(th, width))
+		}
+		for _, line := range preview {
+			out = append(out, toolBodyLine(th, line, width, v.CompactMode))
+		}
+		if v.CompactMode {
+			out = append(out, compactToolBlank(th, width))
+		}
+		return out
 	}
 	out := []string{toolBoxTop(th, label, width), toolBoxSide(th, "", width)}
-	if last != "" {
-		out = append(out, toolBoxSide(th, last, width))
+	for _, line := range preview {
+		out = append(out, toolBoxSide(th, line, width))
 	}
 	out = append(out, toolBoxSide(th, "", width), toolBoxBottom(th, width))
 	return out
