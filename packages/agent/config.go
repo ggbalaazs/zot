@@ -47,6 +47,11 @@ type Config struct {
 	// Ctrl+1..9. Cmd+1..9 may also work on terminals that forward Super.
 	QuickModelShortcuts []QuickModelShortcut `json:"quick_model_shortcuts,omitempty"`
 
+	// Keymap maps terminal key chords (for example "ctrl+shift+g") to
+	// interactive slash commands. Values may be built-in commands,
+	// extension commands, or /skill:<name> invocations.
+	Keymap map[string]string `json:"keymap,omitempty"`
+
 	// InlineImagesEnabled controls whether zot draws screenshots inline
 	// when the terminal supports an image protocol. nil/missing means
 	// auto (enabled when supported); false disables; true forces the
